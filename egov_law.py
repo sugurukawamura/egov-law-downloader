@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import io
-import re
 import sys
-import zipfile
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Any
 
 import requests
@@ -16,17 +14,14 @@ from urllib3.util.retry import Retry
 BASE_URL = "https://laws.e-gov.go.jp/api/2"
 TIMEOUT = 30
 DEFAULT_LIMIT = 10
-PDF_FILE_TYPE_CANDIDATES = [
-    "pdf",
-    "pdf_h",
-    "pdf_yoko",
-    "pdf1",
-]
+SUPPORTED_FILE_TYPES = ("xml", "json", "html", "rtf", "docx")
+TEXT_FILE_TYPES = {"xml", "json", "html", "rtf"}
+BINARY_FILE_TYPES = {"docx"}
 
 
 def create_session() -> requests.Session:
     session = requests.Session()
-    session.headers.update({"User-Agent": "egov-law-downloader/0.2"})
+    session.headers.update({"User-Agent": "egov-law-downloader/0.3"})
     retry = Retry(
         total=3,
         backoff_factor=0.5,
@@ -103,6 +98,7 @@ def get_law_title(law: dict[str, Any]) -> str:
     current_revision_info = law.get("current_revision_info") or {}
     return (
         current_revision_info.get("law_title")
+        or law.get("revision_info", {}).get("law_title")
         or law_info.get("law_title")
         or "名称不明"
     )
@@ -111,16 +107,21 @@ def get_law_title(law: dict[str, Any]) -> str:
 def get_law_identifier(law: dict[str, Any]) -> str:
     law_info = law.get("law_info") or {}
     current_revision_info = law.get("current_revision_info") or {}
-    for key in ("law_id", "law_num"):
-        if law_info.get(key):
-            return str(law_info[key])
-        if current_revision_info.get(key):
-            return str(current_revision_info[key])
-    raise ValueError("law_id または law_num が見つかりませんでした。")
+    revision_info = law.get("revision_info") or {}
+
+    for source in (current_revision_info, revision_info, law_info):
+        if source.get("law_revision_id"):
+            return str(source["law_revision_id"])
+    for source in (law_info, current_revision_info, revision_info):
+        if source.get("law_id"):
+            return str(source["law_id"])
+        if source.get("law_num"):
+            return str(source["law_num"])
+    raise ValueError("law_id、law_num、law_revision_id のいずれも見つかりませんでした。")
 
 
-def build_output_filename(law: dict[str, Any]) -> str:
-    return f"{sanitize_filename(get_law_title(law))}_{pick_date_str(law)}.pdf"
+def build_output_filename(law: dict[str, Any], file_type: str) -> str:
+    return f"{sanitize_filename(get_law_title(law))}_{pick_date_str(law)}.{file_type}"
 
 
 def display_candidates(laws: list[dict[str, Any]]) -> None:
@@ -157,58 +158,54 @@ def select_law(laws: list[dict[str, Any]], selection: int | None) -> dict[str, A
     raise ValueError(f"--select は 1 から {len(laws)} の範囲で指定してください。")
 
 
-def extract_first_pdf_from_zip(zip_bytes: bytes) -> bytes | None:
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zip_file:
-        for name in zip_file.namelist():
-            if name.lower().endswith(".pdf"):
-                return zip_file.read(name)
-    return None
+def validate_file_type(file_type: str) -> str:
+    normalized = file_type.lower()
+    if normalized not in SUPPORTED_FILE_TYPES:
+        choices = ", ".join(SUPPORTED_FILE_TYPES)
+        raise ValueError(f"--file-type は {choices} のいずれかを指定してください。")
+    return normalized
 
 
-def try_download_pdf_bytes(
+def build_request_headers(file_type: str) -> dict[str, str]:
+    if file_type == "json":
+        return {"Accept": "application/json"}
+    if file_type == "xml":
+        return {"Accept": "application/xml"}
+    return {"Accept": "*/*"}
+
+
+def download_law_file(
     law_identifier: str,
+    file_type: str,
     *,
     request_session: requests.Session | None = None,
+    asof: str | None = None,
 ) -> bytes:
     active_session = request_session or session
-    attempted_urls: list[str] = []
-    last_error: Exception | None = None
-
-    for file_type in PDF_FILE_TYPE_CANDIDATES:
-        url = f"{BASE_URL}/law_file/{file_type}/{law_identifier}"
-        attempted_urls.append(url)
-        try:
-            response = active_session.get(url, timeout=TIMEOUT)
-            if response.status_code != 200:
-                continue
-
-            content_type = (response.headers.get("Content-Type") or "").lower()
-            content = response.content
-
-            if content.startswith(b"%PDF") or "application/pdf" in content_type:
-                return content
-
-            if "zip" in content_type or content[:2] == b"PK":
-                pdf_bytes = extract_first_pdf_from_zip(content)
-                if pdf_bytes is not None:
-                    return pdf_bytes
-        except Exception as exc:
-            last_error = exc
-
-    message = "PDF取得に失敗しました。試行URL: " + ", ".join(attempted_urls)
-    if last_error is not None:
-        raise RuntimeError(f"{message} / 最後のエラー: {last_error}") from last_error
-    raise RuntimeError(message)
+    url = f"{BASE_URL}/law_file/{file_type}/{law_identifier}"
+    params = {"asof": asof} if asof else None
+    response = active_session.get(
+        url,
+        params=params,
+        headers=build_request_headers(file_type),
+        timeout=TIMEOUT,
+    )
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        detail = response.text[:300] if response.text else ""
+        raise RuntimeError(f"取得失敗: {url} / {detail}") from exc
+    return response.content
 
 
-def save_pdf(pdf_bytes: bytes, output_path: Path) -> None:
+def save_law_file(content: bytes, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(pdf_bytes)
+    output_path.write_bytes(content)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="e-Gov法令APIを使って法令PDFを検索・保存します。"
+        description="e-Gov法令APIを使って法令ファイルを検索・保存します。"
     )
     parser.add_argument("keyword", nargs="?", help="検索する法令名")
     parser.add_argument(
@@ -226,7 +223,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=Path.cwd(),
-        help="PDFの保存先ディレクトリ。既定値はカレントディレクトリです。",
+        help="保存先ディレクトリ。既定値はカレントディレクトリです。",
+    )
+    parser.add_argument(
+        "--file-type",
+        default="html",
+        help="保存するファイル形式。xml/json/html/rtf/docx を指定できます。既定値は html です。",
+    )
+    parser.add_argument(
+        "--asof",
+        help="法令の時点を YYYY-MM-DD 形式で指定します。",
     )
     parser.add_argument(
         "--non-interactive",
@@ -250,6 +256,7 @@ def resolve_keyword(args: argparse.Namespace) -> str:
 def run(args: argparse.Namespace) -> int:
     try:
         keyword = resolve_keyword(args)
+        file_type = validate_file_type(args.file_type)
     except ValueError as exc:
         print(exc)
         return 1
@@ -262,8 +269,9 @@ def run(args: argparse.Namespace) -> int:
         print("非対話モードでは --select を指定してください。")
         return 1
 
-    print("e-Gov 法令PDFダウンローダー")
+    print("e-Gov 法令ファイルダウンローダー")
     print(f"検索語: {keyword}")
+    print(f"保存形式: {file_type}")
 
     try:
         laws = search_laws(keyword, limit=args.limit)
@@ -283,10 +291,10 @@ def run(args: argparse.Namespace) -> int:
     try:
         selected = select_law(laws, args.select)
         law_identifier = get_law_identifier(selected)
-        output_path = args.output_dir / build_output_filename(selected)
-        print("\nPDFをダウンロード中...")
-        pdf_bytes = try_download_pdf_bytes(law_identifier)
-        save_pdf(pdf_bytes, output_path)
+        output_path = args.output_dir / build_output_filename(selected, file_type)
+        print("\n法令ファイルをダウンロード中...")
+        content = download_law_file(law_identifier, file_type, asof=args.asof)
+        save_law_file(content, output_path)
     except Exception as exc:
         print(f"ダウンロードに失敗しました: {exc}")
         return 1

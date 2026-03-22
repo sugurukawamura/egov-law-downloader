@@ -1,6 +1,4 @@
-import io
 import unittest
-import zipfile
 from unittest.mock import Mock
 
 import egov_law
@@ -29,18 +27,7 @@ class EgovLawTests(unittest.TestCase):
         data = {"results": [{"law_info": {"law_id": "1"}}]}
         self.assertEqual(egov_law.extract_laws(data), data["results"])
 
-    def test_extract_first_pdf_from_zip_returns_pdf(self) -> None:
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w") as zip_file:
-            zip_file.writestr("law.pdf", b"%PDF-1.7 test")
-            zip_file.writestr("readme.txt", b"note")
-
-        self.assertEqual(
-            egov_law.extract_first_pdf_from_zip(buffer.getvalue()),
-            b"%PDF-1.7 test",
-        )
-
-    def test_build_output_filename_uses_title_and_date(self) -> None:
+    def test_build_output_filename_uses_title_date_and_extension(self) -> None:
         law = {
             "law_info": {
                 "law_title": "民法",
@@ -48,22 +35,39 @@ class EgovLawTests(unittest.TestCase):
             }
         }
         self.assertEqual(
-            egov_law.build_output_filename(law),
-            "民法_18960427.pdf",
+            egov_law.build_output_filename(law, "html"),
+            "民法_18960427.html",
         )
 
-    def test_try_download_pdf_bytes_accepts_pdf_response(self) -> None:
+    def test_get_law_identifier_prefers_revision_id(self) -> None:
+        law = {
+            "current_revision_info": {
+                "law_revision_id": "123_20240101_456",
+            },
+            "law_info": {
+                "law_id": "123",
+            },
+        }
+        self.assertEqual(
+            egov_law.get_law_identifier(law),
+            "123_20240101_456",
+        )
+
+    def test_validate_file_type_rejects_unsupported_type(self) -> None:
+        with self.assertRaises(ValueError):
+            egov_law.validate_file_type("pdf")
+
+    def test_download_law_file_returns_binary_content(self) -> None:
         response = Mock()
-        response.status_code = 200
-        response.headers = {"Content-Type": "application/pdf"}
-        response.content = b"%PDF-1.4 dummy"
+        response.content = b"<html>ok</html>"
+        response.raise_for_status.return_value = None
 
         request_session = Mock()
         request_session.get.return_value = response
 
         self.assertEqual(
-            egov_law.try_download_pdf_bytes("123", request_session=request_session),
-            b"%PDF-1.4 dummy",
+            egov_law.download_law_file("123", "html", request_session=request_session),
+            b"<html>ok</html>",
         )
 
     def test_select_law_rejects_out_of_range_selection(self) -> None:
