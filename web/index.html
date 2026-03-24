@@ -205,7 +205,7 @@
         </div>
         <div id="status" class="status">待機中</div>
         <p class="hint">通常はブラウザの「ダウンロード」フォルダへ保存されます。複数ファイルをまとめて落とすので、ブラウザ側で複数ダウンロード許可が必要な場合があります。</p>
-        <p class="hint">`PDF(XML変換)` は e-Gov 公式 PDF ではありません。XML を取得して印刷画面を開き、そこで PDF 保存する流れです。ブラウザのポップアップ許可が必要な場合があります。</p>
+        <p class="hint">`PDF(XML変換)` は e-Gov 公式 PDF ではありません。XML を取得して印刷画面を開き、そこで PDF 保存する流れです。複数法令を選んだ場合は、1 つの印刷画面にまとめて開きます。</p>
         <p class="hint">もし検索に失敗する場合は、e-Gov API の CORS 制限でブラウザから直接アクセスできない可能性があります。その場合は補助サーバー方式に切り替える必要があります。</p>
       </section>
 
@@ -419,23 +419,39 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    function openPrintWindow(title, xmlText) {
+    function openPrintWindow() {
       const printWindow = window.open("", "_blank");
       if (!printWindow) {
         throw new Error("PDF 変換画面を開けませんでした。ブラウザのポップアップ許可を確認してください。");
       }
+      printWindow.document.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>PDF(XML変換)を準備中</title></head><body><p>PDF(XML変換)を準備しています...</p></body></html>`);
+      printWindow.document.close();
+      return printWindow;
+    }
 
-      const escapedTitle = escapeHtml(title);
-      const escapedXml = escapeHtml(xmlText);
+    function renderPrintWindow(printWindow, documents) {
+      const sections = documents.map((document) => {
+        const escapedTitle = escapeHtml(document.title);
+        const escapedXml = escapeHtml(document.xmlText);
+        return `
+  <section class="law-section">
+    <h1>${escapedTitle}</h1>
+    <p>この画面は XML から作った印刷用ビューです。ブラウザの印刷機能で PDF 保存してください。</p>
+    <pre>${escapedXml}</pre>
+  </section>`;
+      }).join("\n");
+
       printWindow.document.write(`<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>${escapedTitle}</title>
+  <title>PDF(XML変換)</title>
   <style>
     body { font-family: "Yu Gothic", sans-serif; margin: 24px; color: #1d2a33; }
     h1 { font-size: 22px; margin-bottom: 12px; }
     p { line-height: 1.7; }
+    .law-section { margin-bottom: 36px; page-break-after: always; }
+    .law-section:last-child { page-break-after: auto; }
     pre {
       white-space: pre-wrap;
       word-break: break-word;
@@ -449,9 +465,7 @@
   </style>
 </head>
 <body>
-  <h1>${escapedTitle}</h1>
-  <p>この画面は XML から作った印刷用ビューです。ブラウザの印刷機能で PDF 保存してください。</p>
-  <pre>${escapedXml}</pre>
+  ${sections}
   <script>
     window.onload = () => {
       setTimeout(() => window.print(), 300);
@@ -514,6 +528,10 @@
 
       try {
         let savedCount = 0;
+        const wantsPdf = fileTypes.includes("pdf");
+        // ユーザーのクリック直後に 1 回だけ開いておくと、ポップアップ制限に引っかかりにくくなります。
+        const printWindow = wantsPdf ? openPrintWindow() : null;
+        const pdfDocuments = [];
         // まず法令ごとに回し、その中で形式ごとに保存を実行します。
         for (const index of indexes) {
           const law = state.laws[index - 1];
@@ -521,12 +539,12 @@
           for (const fileType of fileTypes) {
             appendLog(`ダウンロード中: ${lawTitle(law)} (${fileType})`);
             if (fileType === "pdf") {
-              // PDF は公式形式ではないので、XML を取得して印刷画面を開きます。
+              // PDF は公式形式ではないので、XML を取得して印刷用の 1 画面へまとめます。
               const xmlBlob = await fetchLawFile(law, "xml", asof);
               const xmlText = await xmlBlob.text();
               const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.pdf`;
-              openPrintWindow(filename, xmlText);
-              appendLog(`PDF 変換画面を開きました: ${filename}`);
+              pdfDocuments.push({ title: filename, xmlText });
+              appendLog(`PDF 変換データを追加しました: ${filename}`);
             } else {
               const blob = await fetchLawFile(law, fileType, asof);
               const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.${fileType}`;
@@ -535,6 +553,10 @@
             }
             savedCount += 1;
           }
+        }
+        if (printWindow && pdfDocuments.length > 0) {
+          renderPrintWindow(printWindow, pdfDocuments);
+          appendLog(`PDF 変換画面を開きました: ${pdfDocuments.length} 件`);
         }
         setStatus(`保存完了: ${savedCount} ファイル`);
       } catch (error) {
