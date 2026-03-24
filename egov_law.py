@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass, field
+import html
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
 import time
@@ -12,6 +15,7 @@ from urllib.error import HTTPError as UrllibHTTPError
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+import webbrowser
 
 BASE_URL = "https://laws.e-gov.go.jp/api/2"
 TIMEOUT = 30
@@ -410,6 +414,527 @@ def download_selected_laws(
     return saved_paths
 
 
+def serialize_laws(laws: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """ブラウザ UI へ渡しやすい形に、候補データを軽く整形します。"""
+    serialized: list[dict[str, Any]] = []
+    for index, law in enumerate(laws, start=1):
+        law_info = law.get("law_info") or {}
+        serialized.append(
+            {
+                "index": index,
+                "title": get_law_title(law),
+                "summary": format_law_summary(law, index),
+                "law_num": law_info.get("law_num", ""),
+                "date": pick_date_str(law),
+            }
+        )
+    return serialized
+
+
+def build_web_ui_page() -> str:
+    """ブラウザで開く 1 ページ完結の UI を返します。"""
+    supported_types = json.dumps(SUPPORTED_FILE_TYPES, ensure_ascii=False)
+    default_output_dir = html.escape(str(Path.cwd()))
+    return f"""<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>e-Gov 法令ダウンローダー</title>
+  <style>
+    :root {{
+      --bg: #f5efe4;
+      --panel: #fffdf8;
+      --ink: #1d2a33;
+      --accent: #007a78;
+      --accent-soft: #d8f0ea;
+      --line: #d8cdbd;
+      --warn: #8b2e00;
+      --mono: "SFMono-Regular", "Menlo", monospace;
+      --sans: "Hiragino Sans", "Yu Gothic", sans-serif;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fff7df 0, transparent 32%),
+        linear-gradient(160deg, #efe4cf 0%, #f5efe4 55%, #e8efe8 100%);
+      min-height: 100vh;
+    }}
+    .wrap {{
+      width: min(1100px, calc(100% - 32px));
+      margin: 24px auto 40px;
+    }}
+    .hero {{
+      padding: 24px 28px;
+      border: 1px solid var(--line);
+      background: rgba(255, 253, 248, 0.92);
+      backdrop-filter: blur(8px);
+      border-radius: 22px;
+      box-shadow: 0 20px 50px rgba(61, 52, 40, 0.08);
+    }}
+    h1 {{
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 44px);
+    }}
+    .lead {{
+      margin: 0;
+      line-height: 1.7;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      margin-top: 18px;
+    }}
+    .panel {{
+      border: 1px solid var(--line);
+      background: rgba(255, 253, 248, 0.95);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 12px 30px rgba(61, 52, 40, 0.06);
+    }}
+    .panel h2 {{
+      margin: 0 0 12px;
+      font-size: 18px;
+    }}
+    label {{
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }}
+    input[type="text"], input[type="number"] {{
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #cdbfaa;
+      background: #fff;
+      font-size: 15px;
+    }}
+    .row {{
+      display: grid;
+      grid-template-columns: 1fr 180px;
+      gap: 12px;
+    }}
+    .check-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 10px;
+    }}
+    .pill {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid #cdbfaa;
+      background: #fff;
+      font-size: 14px;
+    }}
+    button {{
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+    }}
+    button.secondary {{
+      background: #e7ece8;
+      color: var(--ink);
+    }}
+    button:disabled {{
+      opacity: 0.5;
+      cursor: wait;
+    }}
+    .actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }}
+    .results {{
+      display: grid;
+      gap: 10px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 6px;
+    }}
+    .law-card {{
+      border: 1px solid #dccfbf;
+      border-radius: 14px;
+      background: white;
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 12px;
+    }}
+    .law-title {{
+      font-weight: 700;
+      margin-bottom: 4px;
+    }}
+    .law-meta {{
+      color: #5d6a72;
+      font-size: 13px;
+      line-height: 1.6;
+    }}
+    .status {{
+      margin-top: 12px;
+      min-height: 24px;
+      font-weight: 700;
+      color: var(--warn);
+    }}
+    .log {{
+      background: #162329;
+      color: #d9f8ed;
+      border-radius: 14px;
+      padding: 14px;
+      min-height: 260px;
+      white-space: pre-wrap;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      overflow: auto;
+    }}
+    .hint {{
+      margin-top: 10px;
+      font-size: 13px;
+      color: #5d6a72;
+      line-height: 1.6;
+    }}
+    @media (max-width: 860px) {{
+      .grid, .row {{ grid-template-columns: 1fr; }}
+      .wrap {{ width: min(100% - 20px, 1100px); }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>e-Gov 法令ダウンローダー</h1>
+      <p class="lead">ブラウザ上で法令を検索して、複数の法令を複数形式で保存できます。下のログには、いま何を実行しているかが順番に表示されます。</p>
+    </section>
+    <div class="grid">
+      <section class="panel">
+        <h2>1. 検索条件</h2>
+        <div class="row">
+          <div>
+            <label for="keyword">法令名</label>
+            <input id="keyword" type="text" placeholder="例: 民法">
+          </div>
+          <div>
+            <label for="limit">候補件数</label>
+            <input id="limit" type="number" min="1" value="{DEFAULT_LIMIT}">
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <label for="asof">時点 (任意)</label>
+          <input id="asof" type="text" placeholder="YYYY-MM-DD">
+        </div>
+        <div style="margin-top:12px;">
+          <label for="outputDir">保存先フォルダ</label>
+          <input id="outputDir" type="text" value="{default_output_dir}">
+        </div>
+        <div style="margin-top:14px;">
+          <label>2. ダウンロード形式</label>
+          <div class="check-grid" id="fileTypes"></div>
+        </div>
+        <div class="actions">
+          <button id="searchButton">法令を検索</button>
+          <button id="downloadButton" class="secondary">選択した法令を保存</button>
+        </div>
+        <div id="status" class="status"></div>
+        <p class="hint">保存したい法令は複数選べます。形式も複数選べます。`pdf` は e-Gov API 非対応なので出していません。</p>
+      </section>
+      <section class="panel">
+        <h2>3. 検索結果</h2>
+        <div id="results" class="results"></div>
+      </section>
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h2>4. 実行ログ</h2>
+        <div id="log" class="log">アプリを起動しました。法令名を入力して検索してください。</div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const supportedTypes = {supported_types};
+    const state = {{
+      laws: [],
+      selectedIndexes: new Set(),
+    }};
+
+    const fileTypesRoot = document.getElementById("fileTypes");
+    const resultsRoot = document.getElementById("results");
+    const logRoot = document.getElementById("log");
+    const statusRoot = document.getElementById("status");
+    const searchButton = document.getElementById("searchButton");
+    const downloadButton = document.getElementById("downloadButton");
+
+    function appendLog(message) {{
+      logRoot.textContent += "\\n" + message;
+      logRoot.scrollTop = logRoot.scrollHeight;
+    }}
+
+    function setStatus(message, isError = false) {{
+      statusRoot.textContent = message;
+      statusRoot.style.color = isError ? "#8b2e00" : "#0b6b63";
+    }}
+
+    function selectedFileTypes() {{
+      return supportedTypes.filter((name) => {{
+        const checkbox = document.getElementById(`file-${{name}}`);
+        return checkbox && checkbox.checked;
+      }});
+    }}
+
+    function renderFileTypes() {{
+      fileTypesRoot.innerHTML = "";
+      supportedTypes.forEach((name, index) => {{
+        const wrapper = document.createElement("label");
+        wrapper.className = "pill";
+        wrapper.innerHTML = `<input type="checkbox" id="file-${{name}}" ${{index === 2 ? "checked" : ""}}> ${{name.toUpperCase()}}`;
+        fileTypesRoot.appendChild(wrapper);
+      }});
+    }}
+
+    function renderResults() {{
+      resultsRoot.innerHTML = "";
+      if (!state.laws.length) {{
+        resultsRoot.innerHTML = "<div class='hint'>検索するとここに候補が出ます。</div>";
+        return;
+      }}
+      state.laws.forEach((law) => {{
+        const card = document.createElement("label");
+        card.className = "law-card";
+        card.innerHTML = `
+          <input type="checkbox" data-index="${{law.index}}" ${{state.selectedIndexes.has(law.index) ? "checked" : ""}}>
+          <div>
+            <div class="law-title">${{law.title}}</div>
+            <div class="law-meta">${{law.summary}}</div>
+          </div>
+        `;
+        const checkbox = card.querySelector("input");
+        checkbox.addEventListener("change", () => {{
+          if (checkbox.checked) {{
+            state.selectedIndexes.add(law.index);
+          }} else {{
+            state.selectedIndexes.delete(law.index);
+          }}
+        }});
+        resultsRoot.appendChild(card);
+      }});
+    }}
+
+    async function postJson(url, body) {{
+      const response = await fetch(url, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify(body),
+      }});
+      return response.json();
+    }}
+
+    searchButton.addEventListener("click", async () => {{
+      const keyword = document.getElementById("keyword").value.trim();
+      const limit = Number(document.getElementById("limit").value);
+      if (!keyword) {{
+        setStatus("法令名を入力してください。", true);
+        return;
+      }}
+      if (!Number.isInteger(limit) || limit < 1) {{
+        setStatus("候補件数は 1 以上の整数で入力してください。", true);
+        return;
+      }}
+
+      setStatus("検索中です...");
+      searchButton.disabled = true;
+      try {{
+        appendLog("検索開始: API へ法令候補を問い合わせます。");
+        const data = await postJson("/api/search", {{ keyword, limit }});
+        if (!data.ok) {{
+          setStatus(data.error, true);
+          appendLog(`検索失敗: ${{data.error}}`);
+          return;
+        }}
+        state.laws = data.laws;
+        state.selectedIndexes = new Set();
+        renderResults();
+        appendLog(`検索完了: ${{data.laws.length}} 件の候補を表示しました。`);
+        setStatus(`検索完了: ${{data.laws.length}} 件`);
+      }} catch (error) {{
+        setStatus(String(error), true);
+        appendLog(`検索失敗: ${{error}}`);
+      }} finally {{
+        searchButton.disabled = false;
+      }}
+    }});
+
+    downloadButton.addEventListener("click", async () => {{
+      const fileTypes = selectedFileTypes();
+      const indexes = Array.from(state.selectedIndexes);
+      const outputDir = document.getElementById("outputDir").value.trim();
+      const asof = document.getElementById("asof").value.trim();
+
+      if (!indexes.length) {{
+        setStatus("保存したい法令を 1 件以上選択してください。", true);
+        return;
+      }}
+      if (!fileTypes.length) {{
+        setStatus("保存形式を 1 つ以上選択してください。", true);
+        return;
+      }}
+      if (!outputDir) {{
+        setStatus("保存先フォルダを入力してください。", true);
+        return;
+      }}
+
+      downloadButton.disabled = true;
+      setStatus("ダウンロード中です...");
+      try {{
+        appendLog("保存開始: 選択した法令を順番にダウンロードします。");
+        const data = await postJson("/api/download", {{ indexes, file_types: fileTypes, output_dir: outputDir, asof }});
+        if (!data.ok) {{
+          setStatus(data.error, true);
+          appendLog(`保存失敗: ${{data.error}}`);
+          return;
+        }}
+        data.logs.forEach((line) => appendLog(line));
+        appendLog(`保存完了: ${{data.saved_paths.length}} ファイルを保存しました。`);
+        setStatus(`保存完了: ${{data.saved_paths.length}} ファイル`);
+      }} catch (error) {{
+        setStatus(String(error), true);
+        appendLog(`保存失敗: ${{error}}`);
+      }} finally {{
+        downloadButton.disabled = false;
+      }}
+    }});
+
+    renderFileTypes();
+    renderResults();
+  </script>
+</body>
+</html>
+"""
+
+
+@dataclass
+class WebUIState:
+    """ブラウザ UI の現在状態を、サーバー側でまとめて持ちます。"""
+
+    laws: list[dict[str, Any]] = field(default_factory=list)
+
+
+def build_json_response(payload: dict[str, Any]) -> bytes:
+    """ブラウザとのやりとりは JSON に統一します。"""
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def create_web_handler(state: WebUIState) -> type[BaseHTTPRequestHandler]:
+    """サーバーに現在の検索結果を持たせた Handler を作ります。"""
+
+    class EgovLawWebHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path != "/":
+                self.send_error(404)
+                return
+            page = build_web_ui_page().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.end_headers()
+            self.wfile.write(page)
+
+        def do_POST(self) -> None:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(content_length)
+
+            try:
+                payload = json.loads(raw_body.decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                self._send_json({"ok": False, "error": "JSON を読み取れませんでした。"}, 400)
+                return
+
+            if self.path == "/api/search":
+                self._handle_search(payload)
+                return
+            if self.path == "/api/download":
+                self._handle_download(payload)
+                return
+
+            self._send_json({"ok": False, "error": "未対応の API です。"}, 404)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            return
+
+        def _handle_search(self, payload: dict[str, Any]) -> None:
+            keyword = str(payload.get("keyword", "")).strip()
+            limit = int(payload.get("limit", DEFAULT_LIMIT))
+
+            if not keyword:
+                self._send_json({"ok": False, "error": "法令名を入力してください。"}, 400)
+                return
+            if limit < 1:
+                self._send_json({"ok": False, "error": "候補件数は 1 以上にしてください。"}, 400)
+                return
+
+            try:
+                state.laws = search_laws(keyword, limit=limit)
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc)}, 500)
+                return
+
+            self._send_json({"ok": True, "laws": serialize_laws(state.laws)})
+
+        def _handle_download(self, payload: dict[str, Any]) -> None:
+            indexes = payload.get("indexes") or []
+            file_types = payload.get("file_types") or []
+            output_dir = Path(str(payload.get("output_dir", "")).strip() or str(Path.cwd()))
+            asof = str(payload.get("asof", "")).strip() or None
+
+            try:
+                selected_laws = select_laws(state.laws, [int(index) for index in indexes])
+                normalized_types = validate_file_types([str(file_type) for file_type in file_types])
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc)}, 400)
+                return
+
+            logs: list[str] = []
+            try:
+                saved_paths = download_selected_laws(
+                    selected_laws,
+                    normalized_types,
+                    output_dir,
+                    asof=asof,
+                    reporter=logs.append,
+                )
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc), "logs": logs}, 500)
+                return
+
+            self._send_json(
+                {
+                    "ok": True,
+                    "logs": logs,
+                    "saved_paths": [str(path) for path in saved_paths],
+                }
+            )
+
+        def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
+            body = build_json_response(payload)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    return EgovLawWebHandler
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="e-Gov法令APIを使って法令ファイルを検索・保存します。"
@@ -526,213 +1051,30 @@ def run_cli(args: argparse.Namespace) -> int:
     return 0
 
 
-class EgovLawApp:
-    """初心者でも流れを追いやすいよう、検索と保存を画面で分けた GUI です。"""
-
-    def __init__(self, root: Any) -> None:
-        import tkinter as tk
-        from tkinter import ttk
-
-        self.root = root
-        self.root.title("e-Gov 法令ダウンローダー")
-        self.root.geometry("980x720")
-
-        self.laws: list[dict[str, Any]] = []
-        self.keyword_var = tk.StringVar()
-        self.limit_var = tk.StringVar(value=str(DEFAULT_LIMIT))
-        self.asof_var = tk.StringVar()
-        self.output_dir_var = tk.StringVar(value=str(Path.cwd()))
-        self.file_type_vars = {
-            file_type: tk.BooleanVar(value=(file_type == "html"))
-            for file_type in SUPPORTED_FILE_TYPES
-        }
-
-        root.columnconfigure(0, weight=1)
-        root.rowconfigure(3, weight=1)
-        root.rowconfigure(5, weight=1)
-
-        search_frame = ttk.LabelFrame(root, text="1. 検索条件")
-        search_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
-        search_frame.columnconfigure(1, weight=1)
-
-        ttk.Label(search_frame, text="法令名").grid(row=0, column=0, sticky="w", padx=8, pady=6)
-        ttk.Entry(search_frame, textvariable=self.keyword_var).grid(
-            row=0, column=1, sticky="ew", padx=8, pady=6
-        )
-        ttk.Label(search_frame, text="候補件数").grid(row=1, column=0, sticky="w", padx=8, pady=6)
-        ttk.Entry(search_frame, textvariable=self.limit_var, width=8).grid(
-            row=1, column=1, sticky="w", padx=8, pady=6
-        )
-        ttk.Label(search_frame, text="時点 (任意)").grid(row=2, column=0, sticky="w", padx=8, pady=6)
-        ttk.Entry(search_frame, textvariable=self.asof_var).grid(
-            row=2, column=1, sticky="ew", padx=8, pady=6
-        )
-        ttk.Button(search_frame, text="法令を検索", command=self.search).grid(
-            row=0, column=2, rowspan=3, sticky="ns", padx=8, pady=6
-        )
-
-        type_frame = ttk.LabelFrame(root, text="2. ダウンロード形式")
-        type_frame.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
-        for index, file_type in enumerate(SUPPORTED_FILE_TYPES):
-            ttk.Checkbutton(
-                type_frame,
-                text=file_type.upper(),
-                variable=self.file_type_vars[file_type],
-            ).grid(row=0, column=index, sticky="w", padx=8, pady=8)
-
-        result_frame = ttk.LabelFrame(root, text="3. 検索結果 (複数選択可)")
-        result_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        result_frame.columnconfigure(0, weight=1)
-        result_frame.rowconfigure(0, weight=1)
-
-        self.result_listbox = tk.Listbox(result_frame, selectmode="extended")
-        self.result_listbox.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
-        result_scrollbar = ttk.Scrollbar(
-            result_frame, orient="vertical", command=self.result_listbox.yview
-        )
-        result_scrollbar.grid(row=0, column=1, sticky="ns", pady=8)
-        self.result_listbox.config(yscrollcommand=result_scrollbar.set)
-
-        output_frame = ttk.LabelFrame(root, text="4. 保存先")
-        output_frame.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 12))
-        output_frame.columnconfigure(0, weight=1)
-        ttk.Entry(output_frame, textvariable=self.output_dir_var).grid(
-            row=0, column=0, sticky="ew", padx=8, pady=8
-        )
-        ttk.Button(output_frame, text="参照...", command=self.choose_output_dir).grid(
-            row=0, column=1, padx=8, pady=8
-        )
-        ttk.Button(output_frame, text="選択した法令を保存", command=self.download).grid(
-            row=0, column=2, padx=8, pady=8
-        )
-
-        log_frame = ttk.LabelFrame(root, text="5. 実行ログ")
-        log_frame.grid(row=5, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
-
-        self.log_text = tk.Text(log_frame, wrap="word", height=12)
-        self.log_text.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
-        log_scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
-        log_scrollbar.grid(row=0, column=1, sticky="ns", pady=8)
-        self.log_text.config(yscrollcommand=log_scrollbar.set)
-
-        self.append_log("アプリを起動しました。法令名を入れて「法令を検索」を押してください。")
-
-    def append_log(self, message: str) -> None:
-        """画面下部に、今どの段階なのかを順に表示します。"""
-        self.log_text.insert("end", message + "\n")
-        self.log_text.see("end")
-        self.root.update_idletasks()
-
-    def choose_output_dir(self) -> None:
-        from tkinter import filedialog
-
-        selected_dir = filedialog.askdirectory(initialdir=self.output_dir_var.get() or str(Path.cwd()))
-        if selected_dir:
-            self.output_dir_var.set(selected_dir)
-            self.append_log(f"保存先を変更しました: {selected_dir}")
-
-    def get_selected_file_types(self) -> list[str]:
-        return [name for name, selected in self.file_type_vars.items() if selected.get()]
-
-    def search(self) -> None:
-        from tkinter import messagebox
-
-        keyword = self.keyword_var.get().strip()
-        if not keyword:
-            messagebox.showerror("入力エラー", "法令名を入力してください。")
-            return
-
-        try:
-            limit = int(self.limit_var.get())
-            if limit < 1:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror("入力エラー", "候補件数は 1 以上の整数で入力してください。")
-            return
-
-        self.append_log("検索開始: API へ法令候補を問い合わせます。")
-        try:
-            self.laws = search_laws(keyword, limit=limit)
-        except Exception as exc:
-            messagebox.showerror("検索失敗", str(exc))
-            self.append_log(f"検索失敗: {exc}")
-            return
-
-        self.result_listbox.delete(0, "end")
-        for law in self.laws:
-            self.result_listbox.insert("end", format_law_summary(law))
-
-        if not self.laws:
-            self.append_log("候補が見つかりませんでした。")
-            messagebox.showinfo("検索結果", "候補が見つかりませんでした。")
-            return
-
-        self.append_log(f"検索完了: {len(self.laws)} 件の候補を表示しました。")
-
-    def download(self) -> None:
-        from tkinter import messagebox
-
-        if not self.laws:
-            messagebox.showerror("保存エラー", "先に法令を検索してください。")
-            return
-
-        selected_indexes = list(self.result_listbox.curselection())
-        if not selected_indexes:
-            messagebox.showerror("保存エラー", "保存したい法令を 1 件以上選択してください。")
-            return
-
-        try:
-            file_types = validate_file_types(self.get_selected_file_types())
-        except ValueError as exc:
-            messagebox.showerror("保存エラー", str(exc))
-            return
-
-        output_dir = Path(self.output_dir_var.get() or Path.cwd())
-        selected_laws = [self.laws[index] for index in selected_indexes]
-        asof = self.asof_var.get().strip() or None
-
-        self.append_log("保存開始: 選択した法令を順番にダウンロードします。")
-        try:
-            saved_paths = download_selected_laws(
-                selected_laws,
-                file_types,
-                output_dir,
-                asof=asof,
-                reporter=self.append_log,
-            )
-        except Exception as exc:
-            messagebox.showerror("保存失敗", str(exc))
-            self.append_log(f"保存失敗: {exc}")
-            return
-
-        self.append_log(f"保存完了: {len(saved_paths)} ファイルを保存しました。")
-        messagebox.showinfo(
-            "保存完了",
-            f"{len(saved_paths)} ファイルを保存しました。\n保存先: {output_dir}",
-        )
-
-
 def launch_gui() -> int:
-    """GUI を起動します。環境が対応していない場合はエラーを返します。"""
+    """ブラウザで使うローカル UI サーバーを起動します。"""
+    state = WebUIState()
+    handler = create_web_handler(state)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    host, port = server.server_address
+    url = f"http://{host}:{port}/"
+
+    print("ブラウザ UI を起動しました。")
+    print(f"URL: {url}")
+    print("終了するときは Ctrl+C を押してください。")
+
+    # ブラウザを自動で開ける環境ではそのまま開きます。
     try:
-        import tkinter as tk
-    except ImportError:
-        print("この環境では tkinter が使えないため GUI を起動できません。")
-        print("CLI で使う場合は `python egov_law.py \"民法\"` のように実行してください。")
-        return 1
+        webbrowser.open(url)
+    except Exception:
+        pass
 
     try:
-        root = tk.Tk()
-    except Exception as exc:
-        print(f"GUI の起動に失敗しました: {exc}")
-        print("macOS 付属の Python では tkinter が不安定な場合があります。")
-        print("CLI で使う場合は `python egov_law.py \"民法\"` のように実行してください。")
-        return 1
-
-    EgovLawApp(root)
-    root.mainloop()
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nUI サーバーを停止します。")
+    finally:
+        server.server_close()
     return 0
 
 

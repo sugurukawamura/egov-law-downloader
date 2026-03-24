@@ -68,6 +68,28 @@ class EgovLawTests(unittest.TestCase):
     def test_parse_selection_text_supports_comma_separated_values(self) -> None:
         self.assertEqual(egov_law.parse_selection_text("1, 3,5"), [1, 3, 5])
 
+    def test_serialize_laws_returns_browser_friendly_shape(self) -> None:
+        laws = [
+            {
+                "law_info": {
+                    "law_id": "123",
+                    "law_title": "民法",
+                    "law_num": "明治二十九年法律第八十九号",
+                    "promulgation_date": "1896-04-27",
+                }
+            }
+        ]
+        serialized = egov_law.serialize_laws(laws)
+        self.assertEqual(serialized[0]["index"], 1)
+        self.assertEqual(serialized[0]["title"], "民法")
+        self.assertIn("法令番号", serialized[0]["summary"])
+
+    def test_build_web_ui_page_mentions_browser_ui(self) -> None:
+        page = egov_law.build_web_ui_page()
+        self.assertIn("e-Gov 法令ダウンローダー", page)
+        self.assertIn("法令を検索", page)
+        self.assertIn("選択した法令を保存", page)
+
     def test_download_law_file_returns_binary_content(self) -> None:
         response = Mock()
         response.content = b"<html>ok</html>"
