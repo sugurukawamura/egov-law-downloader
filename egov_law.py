@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 import re
-from typing import Any
-
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from typing import Any, Protocol
+from urllib.error import HTTPError as UrllibHTTPError
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 BASE_URL = "https://laws.e-gov.go.jp/api/2"
 TIMEOUT = 30
@@ -19,18 +21,101 @@ TEXT_FILE_TYPES = {"xml", "json", "html", "rtf"}
 BINARY_FILE_TYPES = {"docx"}
 
 
-def create_session() -> requests.Session:
-    session = requests.Session()
+class HTTPError(Exception):
+    pass
+
+
+class Response:
+    def __init__(
+        self,
+        *,
+        content: bytes,
+        status_code: int,
+        headers: dict[str, str],
+        url: str,
+    ) -> None:
+        self.content = content
+        self.status_code = status_code
+        self.headers = headers
+        self.url = url
+
+    @property
+    def text(self) -> str:
+        charset = "utf-8"
+        content_type = self.headers.get("Content-Type", "")
+        match = re.search(r"charset=([^\s;]+)", content_type, flags=re.IGNORECASE)
+        if match:
+            charset = match.group(1)
+        return self.content.decode(charset, errors="replace")
+
+    def json(self) -> Any:
+        return json.loads(self.text)
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise HTTPError(f"HTTP {self.status_code}: {self.url}")
+
+
+class SessionLike(Protocol):
+    def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: int | float | None = None,
+    ) -> Any: ...
+
+
+class SimpleSession:
+    def __init__(self) -> None:
+        self.headers: dict[str, str] = {}
+        self.retryable_statuses = {429, 500, 502, 503, 504}
+        self.max_retries = 3
+        self.backoff_factor = 0.5
+
+    def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: int | float | None = None,
+    ) -> Response:
+        query = urlencode(params or {})
+        full_url = f"{url}?{query}" if query else url
+        merged_headers = {**self.headers, **(headers or {})}
+        request = Request(full_url, headers=merged_headers, method="GET")
+
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                with urlopen(request, timeout=timeout) as response:
+                    return Response(
+                        content=response.read(),
+                        status_code=getattr(response, "status", response.getcode()),
+                        headers=dict(response.headers.items()),
+                        url=response.geturl(),
+                    )
+            except UrllibHTTPError as exc:
+                if exc.code in self.retryable_statuses and attempt < self.max_retries:
+                    time.sleep(self.backoff_factor * (2**attempt))
+                    last_error = exc
+                    continue
+                raise HTTPError(f"HTTP {exc.code}: {full_url}") from exc
+            except URLError as exc:
+                if attempt < self.max_retries:
+                    time.sleep(self.backoff_factor * (2**attempt))
+                    last_error = exc
+                    continue
+                raise RuntimeError(f"接続エラー: {exc.reason}") from exc
+
+        raise RuntimeError(f"接続エラー: {last_error}")
+
+
+def create_session() -> SimpleSession:
+    session = SimpleSession()
     session.headers.update({"User-Agent": "egov-law-downloader/0.3"})
-    retry = Retry(
-        total=3,
-        backoff_factor=0.5,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=("GET",),
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
     return session
 
 
@@ -77,7 +162,7 @@ def search_laws(
     keyword: str,
     limit: int = DEFAULT_LIMIT,
     *,
-    request_session: requests.Session | None = None,
+    request_session: SessionLike | None = None,
 ) -> list[dict[str, Any]]:
     active_session = request_session or session
     response = active_session.get(
@@ -178,7 +263,7 @@ def download_law_file(
     law_identifier: str,
     file_type: str,
     *,
-    request_session: requests.Session | None = None,
+    request_session: SessionLike | None = None,
     asof: str | None = None,
 ) -> bytes:
     active_session = request_session or session
@@ -192,7 +277,7 @@ def download_law_file(
     )
     try:
         response.raise_for_status()
-    except requests.HTTPError as exc:
+    except HTTPError as exc:
         detail = response.text[:300] if response.text else ""
         raise RuntimeError(f"取得失敗: {url} / {detail}") from exc
     return response.content
@@ -275,7 +360,7 @@ def run(args: argparse.Namespace) -> int:
 
     try:
         laws = search_laws(keyword, limit=args.limit)
-    except requests.HTTPError as exc:
+    except HTTPError as exc:
         print(f"検索APIエラー: {exc}")
         return 1
     except Exception as exc:
