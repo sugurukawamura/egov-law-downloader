@@ -2,82 +2,77 @@
 
 e-Gov法令API Version 2 を使って、法令を検索し、本文ファイルを保存するツールです。
 
-今は次の 2 つの使い方に対応しています。
+いちばん使いやすい形として、今は macOS 用のネイティブアプリを用意しています。
+検索結果から複数の法令を選び、`xml` `json` `html` `rtf` `docx` の複数形式でまとめて保存できます。
 
-- ブラウザ UI で操作する方法
-- コマンドラインでまとめて実行する方法
+## まず使う方法
 
-追加の外部パッケージは不要で、Python 標準ライブラリだけで動きます。
-
-## できること
-
-- 法令名で e-Gov API を検索
-- 検索結果から複数の法令を選択
-- `xml` `json` `html` `rtf` `docx` の中から複数形式を選んで保存
-- 保存先フォルダを指定
-- 画面や CLI 上で「今どの処理をしているか」を確認
-- 一時的な通信エラーに対して簡単なリトライ
-
-## 動作要件
-
-- Python 3.10 以上
-- GUI を使う場合は `tkinter` が使える Python 環境
-
-## すぐ使う
-
-### ブラウザ UI を使う
-
-UI を使うときは `--gui` を付けて実行します。
+このリポジトリには、ダブルクリック起動できる `.app` を作るスクリプトがあります。
 
 ```bash
-python egov_law.py --gui
+./scripts/build_macos_app.sh
 ```
 
-ローカルサーバーが起動し、ブラウザで操作できる画面を開きます。
-自動で開かない場合は、ターミナルに表示された `http://127.0.0.1:ポート/` をブラウザで開いてください。
+ビルドが終わると、次の場所にアプリができます。
 
-画面の流れ:
+```text
+dist/EgovLawDownloader.app
+```
+
+あとは Finder で `dist/EgovLawDownloader.app` をダブルクリックすれば起動できます。
+
+## アプリでできること
+
+- 法令名で検索
+- 候補を複数選択
+- 保存形式を複数選択
+- 保存先フォルダを選択
+- 実行ログで、今どの処理をしているか確認
+
+## 画面の流れ
 
 1. 法令名を入力
 2. `法令を検索` を押す
 3. 候補一覧から保存したい法令を複数選択
-4. 保存したい形式にチェックを入れる
-5. 保存先を確認して `選択した法令を保存` を押す
-6. 下の実行ログで進行状況を確認
+4. 保存形式をチェック
+5. 保存先を選ぶ
+6. `選択した法令を保存` を押す
+7. 下のログで進み具合を確認
 
-### CLI を使う
+## macOS アプリの中身
 
-引数なしで実行すると CLI の対話モードになります。
+アプリ本体のソースは次のファイルです。
+
+- [`macos/EgovLawDownloader.m`](/Users/skawamura/egov-law-downloader/macos/EgovLawDownloader.m)
+- [`macos/Resources/index.html`](/Users/skawamura/egov-law-downloader/macos/Resources/index.html)
+
+ビルド用スクリプトは次のファイルです。
+
+- [`scripts/build_macos_app.sh`](/Users/skawamura/egov-law-downloader/scripts/build_macos_app.sh)
+
+このスクリプトは、Objective-C + AppKit/WebKit のソースから `.app` を組み立てます。
+Xcode プロジェクトは使っていません。
+
+## Python 版について
+
+以前の Python スクリプトも残しています。
+
+- [`egov_law.py`](/Users/skawamura/egov-law-downloader/egov_law.py)
+
+こちらは CLI や検証用として使えますが、普段使いは macOS アプリの方を想定しています。
+
+## 動作要件
+
+- macOS
+- Apple の Command Line Tools または Xcode
+- Swift 6 系が使える環境
+
+確認例:
 
 ```bash
-python egov_law.py
+xcode-select -p
+swift --version
 ```
-
-検索語を最初に聞かれるので、そのあと候補番号を `1,2` のように入力します。
-
-1 件だけでなく、複数候補・複数形式をまとめて指定できます。
-
-```bash
-python egov_law.py "民法" --non-interactive --select 1,2 --file-type html,json --output-dir downloads
-```
-
-この例では:
-
-- 検索語は `民法`
-- 候補の 1 番と 2 番を保存
-- `html` と `json` の 2 形式を保存
-- 保存先は `downloads`
-
-## 主なオプション
-
-- `keyword`: 検索する法令名
-- `--gui`: ブラウザ UI を起動
-- `--limit`: 候補表示件数
-- `--select`: 保存する候補番号。複数指定は `1,3,5`
-- `--file-type`: 保存形式。複数指定は `html,json` または `--file-type html --file-type json`
-- `--output-dir`: 保存先ディレクトリ
-- `--asof`: 法令の時点を `YYYY-MM-DD` 形式で指定
-- `--non-interactive`: 対話入力なしで実行
 
 ## 保存ファイル名
 
@@ -102,30 +97,30 @@ python egov_law.py "民法" --non-interactive --select 1,2 --file-type html,json
 4. 公布日
 5. どれも無い場合は実行日
 
-## 画面で何が起きているか
+## 初心者向けの補足
 
-このツールは、保存時におおむね次の順で動きます。
-
-1. 入力された法令名で検索 API を呼ぶ
-2. 候補一覧を表示する
-3. 選ばれた法令ごとに識別子を取り出す
-4. 選ばれた形式ごとにダウンロード API を呼ぶ
-5. 保存先フォルダを作る
-6. ファイルを書き出す
-
-コードにも、初心者向けに「この関数は何をしているか」のコメントと docstring を入れています。
-
-## 注意点
-
-- `pdf` は公式 API の対応形式ではないため、このツールでは取得対象外です
-- API のレスポンス仕様が変わると調整が必要です
-- `--gui` はローカルのブラウザを使うため、終了するときはターミナル側で `Ctrl+C` を押します
+コードには「この関数は何をしているか」が分かるように、要所にコメントを入れています。
+特にアプリ版は、検索・一覧表示・ダウンロード・保存の流れが追いやすいように分けています。
 
 ## テスト
+
+Python 側の補助ロジックのテスト:
 
 ```bash
 python -m unittest discover -s tests -q
 ```
+
+macOS アプリのビルド確認:
+
+```bash
+./scripts/build_macos_app.sh
+```
+
+## 注意点
+
+- `pdf` は e-Gov API の対応形式ではないため、このツールでは出していません
+- API のレスポンス仕様が変わると調整が必要です
+- macOS ネイティブアプリは Mac 専用です
 
 ## ライセンス
 
