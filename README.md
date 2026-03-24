@@ -57,12 +57,6 @@ Python 版 CLI / 補助サーバー:
 
 - [`egov_law.py`](/Users/skawamura/egov-law-downloader/egov_law.py)
 
-macOS 向けネイティブアプリ実装:
-
-- [`macos/EgovLawDownloader.m`](/Users/skawamura/egov-law-downloader/macos/EgovLawDownloader.m)
-- [`macos/Resources/index.html`](/Users/skawamura/egov-law-downloader/macos/Resources/index.html)
-- [`scripts/build_macos_app.sh`](/Users/skawamura/egov-law-downloader/scripts/build_macos_app.sh)
-
 ただし、通常利用ではまずブラウザ版を使う想定です。
 
 ## 保存ファイル名
@@ -91,7 +85,7 @@ macOS 向けネイティブアプリ実装:
 ## 初心者向けの補足
 
 コードには「この関数は何をしているか」が分かるように、要所にコメントを入れています。
-特に Python 版や macOS 版では、検索・一覧表示・ダウンロード・保存の流れが追いやすいように分けています。
+特に Python 版では、検索・一覧表示・ダウンロード・保存の流れが追いやすいように分けています。
 
 ## テスト
 
@@ -99,12 +93,6 @@ Python 側の補助ロジックのテスト:
 
 ```bash
 python -m unittest discover -s tests -q
-```
-
-macOS アプリのビルド確認:
-
-```bash
-./scripts/build_macos_app.sh
 ```
 
 ## ライセンス
