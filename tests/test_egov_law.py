@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 import egov_law
@@ -53,9 +55,18 @@ class EgovLawTests(unittest.TestCase):
             "123_20240101_456",
         )
 
-    def test_validate_file_type_rejects_unsupported_type(self) -> None:
+    def test_validate_file_types_accepts_multiple_inputs(self) -> None:
+        self.assertEqual(
+            egov_law.validate_file_types(["html,json", "docx"]),
+            ["html", "json", "docx"],
+        )
+
+    def test_validate_file_types_rejects_unsupported_type(self) -> None:
         with self.assertRaises(ValueError):
-            egov_law.validate_file_type("pdf")
+            egov_law.validate_file_types(["pdf"])
+
+    def test_parse_selection_text_supports_comma_separated_values(self) -> None:
+        self.assertEqual(egov_law.parse_selection_text("1, 3,5"), [1, 3, 5])
 
     def test_download_law_file_returns_binary_content(self) -> None:
         response = Mock()
@@ -70,9 +81,44 @@ class EgovLawTests(unittest.TestCase):
             b"<html>ok</html>",
         )
 
-    def test_select_law_rejects_out_of_range_selection(self) -> None:
+    def test_select_laws_rejects_out_of_range_selection(self) -> None:
         with self.assertRaises(ValueError):
-            egov_law.select_law([{"law_info": {"law_id": "1"}}], 2)
+            egov_law.select_laws([{"law_info": {"law_id": "1"}}], [2])
+
+    def test_download_selected_laws_saves_multiple_formats(self) -> None:
+        law = {
+            "law_info": {
+                "law_id": "123",
+                "law_title": "民法",
+                "promulgation_date": "1896-04-27",
+            }
+        }
+
+        request_session = Mock()
+        request_session.get.side_effect = [
+            self._make_response(b"<html>ok</html>"),
+            self._make_response(b'{"ok": true}'),
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            saved_paths = egov_law.download_selected_laws(
+                [law],
+                ["html", "json"],
+                Path(temp_dir),
+                request_session=request_session,
+            )
+
+            self.assertEqual(len(saved_paths), 2)
+            self.assertTrue((Path(temp_dir) / "民法_18960427.html").exists())
+            self.assertTrue((Path(temp_dir) / "民法_18960427.json").exists())
+
+    @staticmethod
+    def _make_response(content: bytes) -> Mock:
+        response = Mock()
+        response.content = content
+        response.raise_for_status.return_value = None
+        response.text = content.decode("utf-8", errors="replace")
+        return response
 
 
 if __name__ == "__main__":
