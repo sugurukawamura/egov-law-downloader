@@ -720,9 +720,17 @@ def launch_gui() -> int:
         import tkinter as tk
     except ImportError:
         print("この環境では tkinter が使えないため GUI を起動できません。")
+        print("CLI で使う場合は `python egov_law.py \"民法\"` のように実行してください。")
         return 1
 
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except Exception as exc:
+        print(f"GUI の起動に失敗しました: {exc}")
+        print("macOS 付属の Python では tkinter が不安定な場合があります。")
+        print("CLI で使う場合は `python egov_law.py \"民法\"` のように実行してください。")
+        return 1
+
     EgovLawApp(root)
     root.mainloop()
     return 0
@@ -732,8 +740,8 @@ def main(argv: list[str] | None = None) -> None:
     raw_args = sys.argv[1:] if argv is None else argv
     args = parse_args(raw_args)
 
-    # 引数なしで起動したときは、初心者でも扱いやすい GUI を既定にします。
-    if args.gui or not raw_args:
+    # 既定動作は CLI にして、GUI が必要なときだけ明示的に起動します。
+    if args.gui:
         sys.exit(launch_gui())
 
     sys.exit(run_cli(args))
