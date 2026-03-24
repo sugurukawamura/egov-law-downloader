@@ -2,31 +2,23 @@
 
 e-Gov法令API Version 2 を使って、法令を検索し、本文ファイルを保存するツールです。
 
-いちばん使いやすい形として、今は macOS 用のネイティブアプリを用意しています。
-検索結果から複数の法令を選び、`xml` `json` `html` `rtf` `docx` の複数形式でまとめて保存できます。
+今の主役は、OS に依存しないブラウザ版 UI です。
+Windows / Mac / Linux で、ブラウザさえあれば開けます。
 
-## まず使う方法
+## いちばん簡単な使い方
 
-このリポジトリには、ダブルクリック起動できる `.app` を作るスクリプトがあります。
+次のファイルをブラウザで開いてください。
 
-```bash
-./scripts/build_macos_app.sh
-```
+- [`web/index.html`](/Users/skawamura/egov-law-downloader/web/index.html)
 
-ビルドが終わると、次の場所にアプリができます。
+Finder、エクスプローラー、ファイルマネージャーからダブルクリックでも開けます。
 
-```text
-dist/EgovLawDownloader.app
-```
-
-あとは Finder で `dist/EgovLawDownloader.app` をダブルクリックすれば起動できます。
-
-## アプリでできること
+## ブラウザ版 UI でできること
 
 - 法令名で検索
 - 候補を複数選択
 - 保存形式を複数選択
-- 保存先フォルダを選択
+- 複数ファイルをまとめてダウンロード
 - 実行ログで、今どの処理をしているか確認
 
 ## 画面の流れ
@@ -35,44 +27,43 @@ dist/EgovLawDownloader.app
 2. `法令を検索` を押す
 3. 候補一覧から保存したい法令を複数選択
 4. 保存形式をチェック
-5. 保存先を選ぶ
-6. `選択した法令を保存` を押す
-7. 下のログで進み具合を確認
+5. `選択した法令を保存` を押す
+6. ブラウザのダウンロードとして保存
 
-## macOS アプリの中身
+## 保存先について
 
-アプリ本体のソースは次のファイルです。
+ブラウザ版は、通常はブラウザの標準ダウンロード先へ保存されます。
+保存先フォルダはブラウザ側の設定に従います。
 
-- [`macos/EgovLawDownloader.m`](/Users/skawamura/egov-law-downloader/macos/EgovLawDownloader.m)
-- [`macos/Resources/index.html`](/Users/skawamura/egov-law-downloader/macos/Resources/index.html)
+## 重要な注意点
 
-ビルド用スクリプトは次のファイルです。
+ブラウザ版は e-Gov API にブラウザから直接アクセスします。
+そのため、環境によっては次の制約があります。
 
-- [`scripts/build_macos_app.sh`](/Users/skawamura/egov-law-downloader/scripts/build_macos_app.sh)
+- ブラウザが複数ダウンロードをブロックする場合がある
+- e-Gov API 側の CORS 制限があると検索や取得に失敗する場合がある
 
-このスクリプトは、Objective-C + AppKit/WebKit のソースから `.app` を組み立てます。
-Xcode プロジェクトは使っていません。
-
-## Python 版について
-
-以前の Python スクリプトも残しています。
+もしブラウザだけでは動かない場合は、補助サーバー方式の Python 版も残しています。
 
 - [`egov_law.py`](/Users/skawamura/egov-law-downloader/egov_law.py)
 
-こちらは CLI や検証用として使えますが、普段使いは macOS アプリの方を想定しています。
+## そのほかの実装
 
-## 動作要件
+クロスプラットフォーム版 UI:
 
-- macOS
-- Apple の Command Line Tools または Xcode
-- Swift 6 系が使える環境
+- [`web/index.html`](/Users/skawamura/egov-law-downloader/web/index.html)
 
-確認例:
+Python 版 CLI / 補助サーバー:
 
-```bash
-xcode-select -p
-swift --version
-```
+- [`egov_law.py`](/Users/skawamura/egov-law-downloader/egov_law.py)
+
+macOS 向けネイティブアプリ実装:
+
+- [`macos/EgovLawDownloader.m`](/Users/skawamura/egov-law-downloader/macos/EgovLawDownloader.m)
+- [`macos/Resources/index.html`](/Users/skawamura/egov-law-downloader/macos/Resources/index.html)
+- [`scripts/build_macos_app.sh`](/Users/skawamura/egov-law-downloader/scripts/build_macos_app.sh)
+
+ただし、通常利用ではまずブラウザ版を使う想定です。
 
 ## 保存ファイル名
 
@@ -100,7 +91,7 @@ swift --version
 ## 初心者向けの補足
 
 コードには「この関数は何をしているか」が分かるように、要所にコメントを入れています。
-特にアプリ版は、検索・一覧表示・ダウンロード・保存の流れが追いやすいように分けています。
+特に Python 版や macOS 版では、検索・一覧表示・ダウンロード・保存の流れが追いやすいように分けています。
 
 ## テスト
 
@@ -115,12 +106,6 @@ macOS アプリのビルド確認:
 ```bash
 ./scripts/build_macos_app.sh
 ```
-
-## 注意点
-
-- `pdf` は e-Gov API の対応形式ではないため、このツールでは出していません
-- API のレスポンス仕様が変わると調整が必要です
-- macOS ネイティブアプリは Mac 専用です
 
 ## ライセンス
 
