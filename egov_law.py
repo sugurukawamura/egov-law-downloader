@@ -90,6 +90,7 @@ class SimpleSession:
         headers: dict[str, str] | None = None,
         timeout: int | float | None = None,
     ) -> Response:
+        # URL の検索条件を文字列にして、実際にアクセスする URL を作ります。
         query = urlencode(params or {})
         full_url = f"{url}?{query}" if query else url
         merged_headers = {**self.headers, **(headers or {})}
@@ -98,6 +99,7 @@ class SimpleSession:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
+                # ここで e-Gov API を呼び、返ってきた本文や JSON を全部読み込みます。
                 with urlopen(request, timeout=timeout) as response:
                     return Response(
                         content=response.read(),
@@ -106,12 +108,14 @@ class SimpleSession:
                         url=response.geturl(),
                     )
             except UrllibHTTPError as exc:
+                # 一時的なサーバーエラーなら、少し待ってから再試行します。
                 if exc.code in self.retryable_statuses and attempt < self.max_retries:
                     time.sleep(self.backoff_factor * (2**attempt))
                     last_error = exc
                     continue
                 raise HTTPError(f"HTTP {exc.code}: {full_url}") from exc
             except URLError as exc:
+                # ネットワーク断などの通信失敗も、規定回数まではやり直します。
                 if attempt < self.max_retries:
                     time.sleep(self.backoff_factor * (2**attempt))
                     last_error = exc
@@ -283,6 +287,7 @@ def select_laws(
     chosen: list[dict[str, Any]] = []
     seen: set[int] = set()
     for selection in selections:
+        # 表示は 1 始まりなので、入力番号をそのまま候補一覧に対応させます。
         if selection < 1 or selection > len(laws):
             raise ValueError(f"--select は 1 から {len(laws)} の範囲で指定してください。")
         if selection in seen:
@@ -370,6 +375,7 @@ def download_law_files(
     saved_paths: list[Path] = []
 
     for file_type in file_types:
+        # 同じ法令でも html / json など形式ごとに別ファイルとして保存します。
         report(f"ダウンロード中: {law_title} ({file_type})")
         content = download_law_file(
             law_identifier,
@@ -399,6 +405,7 @@ def download_selected_laws(
     saved_paths: list[Path] = []
 
     for law in selected_laws:
+        # まず法令ごとに回し、その中で保存形式ごとのダウンロードを行います。
         report(f"対象法令: {get_law_title(law)}")
         saved_paths.extend(
             download_law_files(
@@ -850,6 +857,7 @@ def create_web_handler(state: WebUIState) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(page)
 
         def do_POST(self) -> None:
+            # ブラウザから届いた JSON を読み取り、検索か保存かで処理を分けます。
             content_length = int(self.headers.get("Content-Length", "0"))
             raw_body = self.rfile.read(content_length)
 
@@ -883,6 +891,7 @@ def create_web_handler(state: WebUIState) -> type[BaseHTTPRequestHandler]:
                 return
 
             try:
+                # 検索結果は次の保存 API でも使うので、サーバー側に保持しておきます。
                 state.laws = search_laws(keyword, limit=limit)
             except Exception as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 500)
@@ -897,6 +906,7 @@ def create_web_handler(state: WebUIState) -> type[BaseHTTPRequestHandler]:
             asof = str(payload.get("asof", "")).strip() or None
 
             try:
+                # ブラウザが送ってきた番号から、実際の法令データを取り直します。
                 selected_laws = select_laws(state.laws, [int(index) for index in indexes])
                 normalized_types = validate_file_types([str(file_type) for file_type in file_types])
             except Exception as exc:
@@ -1034,6 +1044,7 @@ def run_cli(args: argparse.Namespace) -> int:
         print("3. 保存対象の法令を選択")
         selected_laws = select_laws(laws, selections)
         print("4. 選んだ法令を指定形式でダウンロード")
+        # ここで「複数法令 x 複数形式」の保存処理をまとめて呼び出します。
         saved_paths = download_selected_laws(
             selected_laws,
             file_types,
@@ -1055,6 +1066,7 @@ def launch_gui() -> int:
     """ブラウザで使うローカル UI サーバーを起動します。"""
     state = WebUIState()
     handler = create_web_handler(state)
+    # OS に空いているポートを選ばせて、ローカル専用の小さなサーバーを立てます。
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     host, port = server.server_address
     url = f"http://{host}:{port}/"

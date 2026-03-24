@@ -223,6 +223,7 @@
   <script>
     const BASE_URL = "https://laws.e-gov.go.jp/api/2";
     const SUPPORTED_TYPES = ["xml", "json", "html", "rtf", "docx"];
+    // 検索結果と、ユーザーがチェックした候補番号を覚えておく場所です。
     const state = {
       laws: [],
       selectedIndexes: new Set(),
@@ -251,6 +252,7 @@
     }
 
     function pickDateString(law) {
+      // API が返す日付候補の中から、ファイル名に使う日付を優先順で選びます。
       const current = law.current_revision_info || {};
       const info = law.law_info || {};
       const candidates = [
@@ -281,6 +283,7 @@
     }
 
     function lawIdentifier(law) {
+      // ダウンロード API が受け付ける識別子を、優先順で探します。
       const info = law.law_info || {};
       const current = law.current_revision_info || {};
       const revision = law.revision_info || {};
@@ -354,6 +357,7 @@
     }
 
     async function searchLaws(keyword, limit) {
+      // 検索 API を呼んで、画面に出す候補一覧を取得します。
       const url = new URL(`${BASE_URL}/laws`);
       url.searchParams.set("law_title", keyword);
       url.searchParams.set("limit", String(limit));
@@ -376,6 +380,7 @@
     }
 
     async function fetchLawFile(law, fileType, asof) {
+      // 1 件の法令を、1 つの形式で取得します。
       const identifier = lawIdentifier(law);
       const url = new URL(`${BASE_URL}/law_file/${fileType}/${identifier}`);
       if (asof) url.searchParams.set("asof", asof);
@@ -393,6 +398,7 @@
     }
 
     function triggerDownload(blob, filename) {
+      // JavaScript からブラウザの通常ダウンロードを発生させます。
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -422,6 +428,7 @@
 
       try {
         state.laws = await searchLaws(keyword, limit);
+        // 新しい検索をしたら、前回の選択状態は消しておきます。
         state.selectedIndexes.clear();
         renderResults();
         appendLog(`検索完了: ${state.laws.length} 件の候補を表示しました。`);
@@ -454,6 +461,7 @@
 
       try {
         let savedCount = 0;
+        // まず法令ごとに回し、その中で形式ごとに保存を実行します。
         for (const index of indexes) {
           const law = state.laws[index - 1];
           appendLog(`対象法令: ${lawTitle(law)}`);
