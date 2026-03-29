@@ -205,7 +205,7 @@
         </div>
         <div id="status" class="status">待機中</div>
         <p class="hint">通常はブラウザの「ダウンロード」フォルダへ保存されます。複数ファイルをまとめて落とすので、ブラウザ側で複数ダウンロード許可が必要な場合があります。</p>
-        <p class="hint">`PDF(XML変換)` は e-Gov 公式 PDF ではありません。XML を取得して印刷画面を開き、そこで PDF 保存する流れです。複数法令を選んだ場合は、1 つの印刷画面にまとめて開きます。</p>
+        <p class="hint">`PDF` は HTML 本文をもとに、この画面内で人が読みやすいレイアウトへ整えて自動生成します。印刷ダイアログは使いません。</p>
         <p class="hint">もし検索に失敗する場合は、e-Gov API の CORS 制限でブラウザから直接アクセスできない可能性があります。その場合は補助サーバー方式に切り替える必要があります。</p>
       </section>
 
@@ -317,15 +317,312 @@
     function requestHeaders(fileType) {
       if (fileType === "json") return { Accept: "application/json" };
       if (fileType === "xml") return { Accept: "application/xml" };
+      if (fileType === "html") return { Accept: "text/html" };
       return { Accept: "*/*" };
     }
 
-    function escapeHtml(text) {
-      return text
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
+    function lawNumber(law) {
+      return (law.law_info || {}).law_num || "";
+    }
+
+    function normalizeTextBlock(text) {
+      return String(text || "")
+        .replace(/\u00a0/g, " ")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim();
+    }
+
+    function extractBlocksFromHtml(htmlText) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+      doc.querySelectorAll("script, style, noscript, iframe, svg").forEach((node) => node.remove());
+
+      const body = doc.body || doc.documentElement;
+      const blocks = [];
+      const blockTags = new Set([
+        "article", "section", "div", "p", "li", "pre", "blockquote",
+        "h1", "h2", "h3", "h4", "h5", "h6", "dt", "dd", "tr"
+      ]);
+      const skipTags = new Set(["script", "style", "noscript", "iframe", "svg", "img"]);
+
+      function nodeText(node) {
+        if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
+        if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+        const tag = node.tagName.toLowerCase();
+        if (skipTags.has(tag)) return "";
+        if (tag === "br") return "\n";
+        if (tag === "td" || tag === "th") {
+          return normalizeTextBlock(Array.from(node.childNodes).map(nodeText).join(" "));
+        }
+        if (tag === "tr") {
+          const cells = Array.from(node.children)
+            .filter((child) => ["td", "th"].includes(child.tagName.toLowerCase()))
+            .map((child) => nodeText(child))
+            .filter(Boolean);
+          const rowText = normalizeTextBlock(cells.join(" | "));
+          if (rowText) blocks.push(rowText);
+          return "";
+        }
+        if (tag === "li") {
+          const itemText = normalizeTextBlock(Array.from(node.childNodes).map(nodeText).join(" "));
+          if (itemText) blocks.push(`・${itemText}`);
+          return "";
+        }
+        if (tag === "pre") {
+          const preText = String(node.textContent || "").replace(/\r\n/g, "\n").trim();
+          if (preText) blocks.push(preText);
+          return "";
+        }
+        if (blockTags.has(tag)) {
+          const text = normalizeTextBlock(Array.from(node.childNodes).map(nodeText).join(" "));
+          if (text) blocks.push(text);
+          return "";
+        }
+        return Array.from(node.childNodes).map(nodeText).join(" ");
+      }
+
+      Array.from(body.childNodes).forEach(nodeText);
+
+      return blocks.filter((block, index) => block && block !== blocks[index - 1]);
+    }
+
+    function buildPdfLines(documentTitle, metaLines, blocks) {
+      const lines = [documentTitle];
+      metaLines.filter(Boolean).forEach((line) => lines.push(line));
+      lines.push("");
+      for (const block of blocks) {
+        lines.push(...String(block).split("\n"));
+        lines.push("");
+      }
+      while (lines.length && !lines[lines.length - 1]) lines.pop();
+      return lines;
+    }
+
+    function wrapLine(ctx, text, maxWidth) {
+      const normalized = String(text || "").replace(/\s+/g, " ").trim();
+      if (!normalized) return [""];
+
+      const chars = Array.from(normalized);
+      const lines = [];
+      let current = "";
+
+      for (const char of chars) {
+        const candidate = current + char;
+        if (current && ctx.measureText(candidate).width > maxWidth) {
+          lines.push(current);
+          current = char.trimStart();
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+      return lines.length ? lines : [""];
+    }
+
+    async function canvasToJpegBytes(canvas) {
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error("PDF 画像化に失敗しました。"));
+        }, "image/jpeg", 0.92);
+      });
+      const buffer = await blob.arrayBuffer();
+      return new Uint8Array(buffer);
+    }
+
+    function buildPdfBlobFromJpegs(jpegs, pageWidthPt, pageHeightPt) {
+      const encoder = new TextEncoder();
+      const parts = [];
+      const offsets = [0];
+      let length = 0;
+
+      function pushBytes(bytes) {
+        parts.push(bytes);
+        length += bytes.length;
+      }
+
+      function pushText(text) {
+        pushBytes(encoder.encode(text));
+      }
+
+      function startObject(id) {
+        offsets[id] = length;
+        pushText(`${id} 0 obj\n`);
+      }
+
+      function endObject() {
+        pushText("endobj\n");
+      }
+
+      const pageIds = [];
+      const imageIds = [];
+      const contentIds = [];
+      let nextId = 3;
+
+      for (let i = 0; i < jpegs.length; i += 1) {
+        imageIds.push(nextId++);
+        contentIds.push(nextId++);
+        pageIds.push(nextId++);
+      }
+
+      pushText("%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n");
+
+      startObject(1);
+      pushText("<< /Type /Catalog /Pages 2 0 R >>\n");
+      endObject();
+
+      startObject(2);
+      pushText(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>\n`);
+      endObject();
+
+      for (let i = 0; i < jpegs.length; i += 1) {
+        const imageId = imageIds[i];
+        const contentId = contentIds[i];
+        const pageId = pageIds[i];
+        const imageBytes = jpegs[i];
+        const content = `q\n${pageWidthPt} 0 0 ${pageHeightPt} 0 0 cm\n/Im${i + 1} Do\nQ\n`;
+
+        startObject(imageId);
+        pushText(`<< /Type /XObject /Subtype /Image /Width 1240 /Height 1754 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);
+        pushBytes(imageBytes);
+        pushText("\nendstream\n");
+        endObject();
+
+        startObject(contentId);
+        pushText(`<< /Length ${encoder.encode(content).length} >>\nstream\n${content}endstream\n`);
+        endObject();
+
+        startObject(pageId);
+        pushText(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidthPt} ${pageHeightPt}] /Resources << /XObject << /Im${i + 1} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>\n`);
+        endObject();
+      }
+
+      const xrefStart = length;
+      pushText(`xref\n0 ${nextId}\n`);
+      pushText("0000000000 65535 f \n");
+      for (let id = 1; id < nextId; id += 1) {
+        pushText(`${String(offsets[id] || 0).padStart(10, "0")} 00000 n \n`);
+      }
+      pushText(`trailer\n<< /Size ${nextId} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
+
+      return new Blob(parts, { type: "application/pdf" });
+    }
+
+    async function buildReadablePdfBlob(law, asof) {
+      let sourceText = "";
+      try {
+        sourceText = await (await fetchLawFile(law, "html", asof)).text();
+      } catch (error) {
+        appendLog(`HTML 取得に失敗したため XML で代替します: ${error.message}`);
+        sourceText = await (await fetchLawFile(law, "xml", asof)).text();
+      }
+
+      const title = lawTitle(law);
+      const metaLines = [
+        lawNumber(law) ? `法令番号: ${lawNumber(law)}` : "",
+        `基準日: ${asof || "現行"}`,
+        `保存日: ${pickDateString(law)}`
+      ];
+      const blocks = extractBlocksFromHtml(sourceText);
+      const contentBlocks = blocks.length ? blocks : [normalizeTextBlock(sourceText)];
+      const lines = buildPdfLines(title, metaLines, contentBlocks);
+
+      const pageWidthPx = 1240;
+      const pageHeightPx = 1754;
+      const marginX = 96;
+      const marginTop = 110;
+      const marginBottom = 120;
+      const bodyWidth = pageWidthPx - marginX * 2;
+      const titleFont = 34;
+      const metaFont = 18;
+      const bodyFont = 20;
+      const lineHeight = 34;
+      const paragraphGap = 16;
+      const pageWidthPt = 595.28;
+      const pageHeightPt = 841.89;
+
+      const measureCanvas = document.createElement("canvas");
+      const measureCtx = measureCanvas.getContext("2d");
+      if (!measureCtx) {
+        throw new Error("PDF 生成に必要な Canvas が使えません。");
+      }
+
+      const layout = [];
+      for (let index = 0; index < lines.length; index += 1) {
+        const text = lines[index];
+        const isBlank = !text;
+        const isTitle = index === 0;
+        const isMeta = !isTitle && index <= metaLines.filter(Boolean).length;
+        const fontSize = isTitle ? titleFont : isMeta ? metaFont : bodyFont;
+        measureCtx.font = `${isTitle ? "700" : "400"} ${fontSize}px ${getComputedStyle(document.body).fontFamily}`;
+
+        if (isBlank) {
+          layout.push({ type: "blank", height: paragraphGap });
+          continue;
+        }
+
+        const wrapped = wrapLine(measureCtx, text, bodyWidth);
+        for (const line of wrapped) {
+          layout.push({ type: "text", text: line, fontSize, bold: isTitle, height: isTitle ? 50 : lineHeight });
+        }
+      }
+
+      const pages = [];
+      let currentPage = [];
+      let usedHeight = marginTop;
+      const maxHeight = pageHeightPx - marginBottom;
+
+      for (const item of layout) {
+        if (usedHeight + item.height > maxHeight && currentPage.length) {
+          pages.push(currentPage);
+          currentPage = [];
+          usedHeight = marginTop;
+        }
+        currentPage.push(item);
+        usedHeight += item.height;
+      }
+      if (currentPage.length) pages.push(currentPage);
+
+      const jpegs = [];
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+        const canvas = document.createElement("canvas");
+        canvas.width = pageWidthPx;
+        canvas.height = pageHeightPx;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("PDF 描画に失敗しました。");
+
+        ctx.fillStyle = "#f8f3ea";
+        ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
+
+        ctx.fillStyle = "#dfd2bf";
+        ctx.fillRect(marginX - 24, marginTop - 32, bodyWidth + 48, pageHeightPx - marginTop - marginBottom + 48);
+
+        ctx.fillStyle = "#fffdf8";
+        ctx.fillRect(marginX - 8, marginTop - 16, bodyWidth + 16, pageHeightPx - marginTop - marginBottom + 16);
+
+        let y = marginTop + 24;
+        for (const item of pages[pageIndex]) {
+          if (item.type === "blank") {
+            y += item.height;
+            continue;
+          }
+          ctx.font = `${item.bold ? "700" : "400"} ${item.fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
+          ctx.fillStyle = item.bold ? "#17323a" : "#24363d";
+          ctx.fillText(item.text, marginX, y);
+          y += item.height;
+        }
+
+        ctx.fillStyle = "#6a7a80";
+        ctx.font = `400 16px "Hiragino Sans", "Yu Gothic", sans-serif`;
+        ctx.fillText(`${pageIndex + 1} / ${pages.length}`, pageWidthPx - marginX - 56, pageHeightPx - 52);
+
+        jpegs.push(await canvasToJpegBytes(canvas));
+      }
+
+      return buildPdfBlobFromJpegs(jpegs, pageWidthPt, pageHeightPt);
     }
 
     function parseAsofDate(value) {
@@ -356,7 +653,7 @@
       SUPPORTED_TYPES.forEach((name, index) => {
         const wrapper = document.createElement("label");
         wrapper.className = "pill";
-        const label = name === "pdf" ? "PDF(XML変換)" : name.toUpperCase();
+        const label = name === "pdf" ? "PDF" : name.toUpperCase();
         wrapper.innerHTML = `<input type="checkbox" id="file-${name}" ${index === 2 ? "checked" : ""}> ${label}`;
         fileTypesRoot.appendChild(wrapper);
       });
@@ -452,63 +749,6 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    function openPrintWindow() {
-      const printWindow = window.open("", "_blank");
-      if (!printWindow) {
-        throw new Error("PDF 変換画面を開けませんでした。ブラウザのポップアップ許可を確認してください。");
-      }
-      printWindow.document.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>PDF(XML変換)を準備中</title></head><body><p>PDF(XML変換)を準備しています...</p></body></html>`);
-      printWindow.document.close();
-      return printWindow;
-    }
-
-    function renderPrintWindow(printWindow, documents) {
-      const sections = documents.map((document) => {
-        const escapedTitle = escapeHtml(document.title);
-        const escapedXml = escapeHtml(document.xmlText);
-        return `
-  <section class="law-section">
-    <h1>${escapedTitle}</h1>
-    <p>この画面は XML から作った印刷用ビューです。ブラウザの印刷機能で PDF 保存してください。</p>
-    <pre>${escapedXml}</pre>
-  </section>`;
-      }).join("\n");
-
-      printWindow.document.write(`<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <title>PDF(XML変換)</title>
-  <style>
-    body { font-family: "Yu Gothic", sans-serif; margin: 24px; color: #1d2a33; }
-    h1 { font-size: 22px; margin-bottom: 12px; }
-    p { line-height: 1.7; }
-    .law-section { margin-bottom: 36px; page-break-after: always; }
-    .law-section:last-child { page-break-after: auto; }
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      border: 1px solid #d8cdbd;
-      border-radius: 12px;
-      padding: 16px;
-      background: #fffdf8;
-      font-size: 12px;
-      line-height: 1.6;
-    }
-  </style>
-</head>
-<body>
-  ${sections}
-  <script>
-    window.onload = () => {
-      setTimeout(() => window.print(), 300);
-    };
-  <\/script>
-</body>
-</html>`);
-      printWindow.document.close();
-    }
-
     searchButton.addEventListener("click", async () => {
       const keyword = document.getElementById("keyword").value.trim();
       const limit = Number(document.getElementById("limit").value);
@@ -571,35 +811,20 @@
 
       try {
         let savedCount = 0;
-        const wantsPdf = fileTypes.includes("pdf");
-        // ユーザーのクリック直後に 1 回だけ開いておくと、ポップアップ制限に引っかかりにくくなります。
-        const printWindow = wantsPdf ? openPrintWindow() : null;
-        const pdfDocuments = [];
         // まず法令ごとに回し、その中で形式ごとに保存を実行します。
         for (const index of indexes) {
           const law = state.laws[index - 1];
           appendLog(`対象法令: ${lawTitle(law)}`);
           for (const fileType of fileTypes) {
             appendLog(`ダウンロード中: ${lawTitle(law)} (${fileType})`);
-            if (fileType === "pdf") {
-              // PDF は公式形式ではないので、XML を取得して印刷用の 1 画面へまとめます。
-              const xmlBlob = await fetchLawFile(law, "xml", asof);
-              const xmlText = await xmlBlob.text();
-              const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.pdf`;
-              pdfDocuments.push({ title: filename, xmlText });
-              appendLog(`PDF 変換データを追加しました: ${filename}`);
-            } else {
-              const blob = await fetchLawFile(law, fileType, asof);
-              const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.${fileType}`;
-              triggerDownload(blob, filename);
-              appendLog(`保存完了: ${filename}`);
-            }
+            const blob = fileType === "pdf"
+              ? await buildReadablePdfBlob(law, asof)
+              : await fetchLawFile(law, fileType, asof);
+            const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.${fileType}`;
+            triggerDownload(blob, filename);
+            appendLog(`保存完了: ${filename}`);
             savedCount += 1;
           }
-        }
-        if (printWindow && pdfDocuments.length > 0) {
-          renderPrintWindow(printWindow, pdfDocuments);
-          appendLog(`PDF 変換画面を開きました: ${pdfDocuments.length} 件`);
         }
         setStatus(`保存完了: ${savedCount} ファイル`);
       } catch (error) {
