@@ -328,6 +328,29 @@
         .replaceAll('"', "&quot;");
     }
 
+    function parseAsofDate(value) {
+      if (!value) return "";
+      const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) {
+        throw new Error("時点は YYYY-MM-DD 形式で入力してください。");
+      }
+
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const date = new Date(Date.UTC(year, month - 1, day));
+
+      if (
+        date.getUTCFullYear() !== year ||
+        date.getUTCMonth() + 1 !== month ||
+        date.getUTCDate() !== day
+      ) {
+        throw new Error("時点の日付が正しくありません。");
+      }
+
+      return value;
+    }
+
     function renderFileTypes() {
       fileTypesRoot.innerHTML = "";
       SUPPORTED_TYPES.forEach((name, index) => {
@@ -350,14 +373,24 @@
         const index = idx + 1;
         const card = document.createElement("label");
         card.className = "law-card";
-        card.innerHTML = `
-          <input type="checkbox" data-index="${index}" ${state.selectedIndexes.has(index) ? "checked" : ""}>
-          <div>
-            <div class="law-title">${lawTitle(law)}</div>
-            <div class="law-meta">${summaryForLaw(law, index)}</div>
-          </div>
-        `;
-        const checkbox = card.querySelector("input");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.dataset.index = String(index);
+        checkbox.checked = state.selectedIndexes.has(index);
+
+        const content = document.createElement("div");
+        const title = document.createElement("div");
+        title.className = "law-title";
+        title.textContent = lawTitle(law);
+
+        const meta = document.createElement("div");
+        meta.className = "law-meta";
+        meta.textContent = summaryForLaw(law, index);
+
+        content.appendChild(title);
+        content.appendChild(meta);
+        card.appendChild(checkbox);
+        card.appendChild(content);
         checkbox.addEventListener("change", () => {
           if (checkbox.checked) state.selectedIndexes.add(index);
           else state.selectedIndexes.delete(index);
@@ -490,17 +523,21 @@
       }
 
       searchButton.disabled = true;
+      state.laws = [];
+      state.selectedIndexes.clear();
+      renderResults();
       setStatus("検索中です...");
       appendLog("検索開始: API へ法令候補を問い合わせます。");
 
       try {
         state.laws = await searchLaws(keyword, limit);
-        // 新しい検索をしたら、前回の選択状態は消しておきます。
-        state.selectedIndexes.clear();
         renderResults();
         appendLog(`検索完了: ${state.laws.length} 件の候補を表示しました。`);
         setStatus(`検索完了: ${state.laws.length} 件`);
       } catch (error) {
+        state.laws = [];
+        state.selectedIndexes.clear();
+        renderResults();
         appendLog(`検索失敗: ${error.message}`);
         setStatus(error.message, true);
       } finally {
@@ -511,7 +548,7 @@
     downloadButton.addEventListener("click", async () => {
       const indexes = Array.from(state.selectedIndexes).sort((a, b) => a - b);
       const fileTypes = selectedFileTypes();
-      const asof = document.getElementById("asof").value.trim();
+      let asof = "";
 
       if (!indexes.length) {
         setStatus("保存したい法令を 1 件以上選択してください。", true);
@@ -519,6 +556,12 @@
       }
       if (!fileTypes.length) {
         setStatus("保存形式を 1 つ以上選択してください。", true);
+        return;
+      }
+      try {
+        asof = parseAsofDate(document.getElementById("asof").value.trim());
+      } catch (error) {
+        setStatus(error.message, true);
         return;
       }
 
