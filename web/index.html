@@ -165,6 +165,22 @@
       color: #5d6a72;
       line-height: 1.6;
     }
+    .notice {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border: 1px solid #d7c7b2;
+      border-radius: 16px;
+      background: rgba(255, 250, 242, 0.96);
+      font-size: 13px;
+      line-height: 1.7;
+      color: #415058;
+    }
+    .notice strong {
+      color: #1d2a33;
+    }
+    .notice a {
+      color: var(--accent);
+    }
     @media (max-width: 860px) {
       .grid, .row { grid-template-columns: 1fr; }
       .wrap { width: min(100% - 20px, 1100px); }
@@ -176,6 +192,11 @@
     <section class="hero">
       <h1>e-Gov 法令ダウンローダー</h1>
       <p class="lead">このファイルは Mac 専用ではありません。ブラウザで開けば、Windows / Mac / Linux で使えます。検索結果から複数の法令を選び、複数形式をまとめてダウンロードできます。</p>
+      <div class="notice">
+        <strong>出典:</strong> <a href="https://laws.e-gov.go.jp/" target="_blank" rel="noreferrer">e-Gov法令検索</a><br>
+        本アプリの MIT License はソースコードにのみ適用されます。取得した法令データや保存ファイルは別扱いです。<br>
+        `PDF` は e-Gov の公式 PDF ではなく、HTML 等をもとにこの画面が生成する非公式の加工物です。
+      </div>
     </section>
 
     <div class="grid">
@@ -524,7 +545,9 @@
       const metaLines = [
         lawNumber(law) ? `法令番号: ${lawNumber(law)}` : "",
         `基準日: ${asof || "現行"}`,
-        `保存日: ${pickDateString(law)}`
+        `保存日: ${pickDateString(law)}`,
+        "出典: e-Gov法令検索 https://laws.e-gov.go.jp/",
+        "注意: この PDF は e-Gov の HTML 等をもとに本アプリが生成した非公式の加工物です。"
       ];
       const blocks = extractBlocksFromHtml(sourceText);
       const contentBlocks = blocks.length ? blocks : [normalizeTextBlock(sourceText)];
