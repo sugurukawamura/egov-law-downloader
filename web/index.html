@@ -112,6 +112,13 @@
       flex-wrap: wrap;
     }
 
+    .subactions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
     button {
       border: 0;
       border-radius: 999px;
@@ -125,6 +132,11 @@
     button.secondary {
       color: var(--accent);
       background: var(--accent-soft);
+    }
+
+    button.tertiary {
+      color: var(--text);
+      background: #ece5da;
     }
 
     button:disabled {
@@ -272,6 +284,10 @@
 
       <section class="panel">
         <h2>3. 検索結果</h2>
+        <div class="subactions">
+          <button id="selectAllButton" type="button" class="tertiary" disabled>全て選択</button>
+          <button id="clearAllButton" type="button" class="tertiary" disabled>全て解除</button>
+        </div>
         <div id="results">
           <div class="hint">検索結果はここに表示されます。</div>
         </div>
@@ -294,6 +310,8 @@
     const statusRoot = document.getElementById("status");
     const searchButton = document.getElementById("searchButton");
     const downloadButton = document.getElementById("downloadButton");
+    const selectAllButton = document.getElementById("selectAllButton");
+    const clearAllButton = document.getElementById("clearAllButton");
 
     function appendLog(message) {
       logRoot.textContent += `\n${message}`;
@@ -303,6 +321,12 @@
     function setStatus(message, isError = false) {
       statusRoot.textContent = message;
       statusRoot.classList.toggle("error", isError);
+    }
+
+    function updateResultActionState() {
+      const hasResults = state.laws.length > 0;
+      selectAllButton.disabled = !hasResults;
+      clearAllButton.disabled = !hasResults;
     }
 
     function sanitizeFilename(name) {
@@ -414,6 +438,7 @@
       resultsRoot.innerHTML = "";
       if (!state.laws.length) {
         resultsRoot.innerHTML = "<div class='hint'>検索結果はここに表示されます。</div>";
+        updateResultActionState();
         return;
       }
 
@@ -447,6 +472,7 @@
         card.appendChild(content);
         resultsRoot.appendChild(card);
       });
+      updateResultActionState();
     }
 
     async function searchLaws(keyword, limit) {
@@ -630,7 +656,7 @@
       try {
         const laws = await searchLaws(keyword, limit);
         state.laws = laws;
-        state.selectedIndexes = new Set(laws.map((_, index) => index + 1));
+        state.selectedIndexes = new Set();
         renderResults();
         setStatus(`${laws.length} 件の候補を表示しました。`);
         appendLog(`検索完了: ${laws.length} 件`);
@@ -711,6 +737,18 @@
       } finally {
         downloadButton.disabled = false;
       }
+    });
+
+    selectAllButton.addEventListener("click", () => {
+      state.selectedIndexes = new Set(state.laws.map((_, index) => index + 1));
+      renderResults();
+      appendLog(`選択更新: ${state.selectedIndexes.size} 件を選択`);
+    });
+
+    clearAllButton.addEventListener("click", () => {
+      state.selectedIndexes = new Set();
+      renderResults();
+      appendLog("選択更新: 全て解除");
     });
 
     renderFileTypes();
