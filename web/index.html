@@ -367,6 +367,62 @@
       return current.law_title || revision.law_title || info.law_title || "名称不明の法令";
     }
 
+    function normalizeSearchText(value) {
+      return String(value || "")
+        .normalize("NFKC")
+        .toLowerCase()
+        .replace(/\s+/g, "");
+    }
+
+    function scoreLawTitleMatch(law, keyword) {
+      const title = normalizeSearchText(lawTitle(law));
+      const query = normalizeSearchText(keyword);
+      if (!title || !query) return Number.NEGATIVE_INFINITY;
+
+      const index = title.indexOf(query);
+      const lawType = String((((law || {}).current_revision_info || {}).law_type) || (((law || {}).revision_info || {}).law_type) || (((law || {}).law_info || {}).law_type) || "");
+      let score = 0;
+
+      if (title === query) score += 100000;
+      else if (index === 0) score += 10000;
+      else if (index > 0) score += 5000 - Math.min(index, 400);
+      else score -= 100000;
+
+      if (title.endsWith("施行令")) score += 1200;
+      if (title.endsWith("施行規則")) score += 1000;
+      if (title.endsWith("法")) score += 800;
+      if (title.includes(`${query}事業`)) score += 1500;
+      if (lawType === "CabinetOrder") score += 150;
+
+      score -= Math.min(title.length, 500);
+      return score;
+    }
+
+    function extractLawList(payload) {
+      if (Array.isArray(payload)) return payload;
+      if (payload && typeof payload === "object") {
+        for (const key of ["laws", "results", "items", "data"]) {
+          if (Array.isArray(payload[key])) return payload[key];
+        }
+      }
+      return [];
+    }
+
+    function rankLawsByTitleMatch(laws, keyword) {
+      return laws
+        .map((law, order) => ({ law, order, score: scoreLawTitleMatch(law, keyword) }))
+        .filter((entry) => Number.isFinite(entry.score))
+        .sort((left, right) => {
+          if (right.score !== left.score) return right.score - left.score;
+
+          const leftTitle = lawTitle(left.law);
+          const rightTitle = lawTitle(right.law);
+          if (leftTitle.length !== rightTitle.length) return leftTitle.length - rightTitle.length;
+          return left.order - right.order;
+        })
+        .map((entry) => entry.law);
+    }
+
     function lawIdentifier(law) {
       const info = law.law_info || {};
       const current = law.current_revision_info || {};
@@ -475,11 +531,13 @@
       updateResultActionState();
     }
 
-    async function searchLaws(keyword, limit) {
+    async function fetchLawSearchPage(keyword, limit, offset) {
       const url = new URL(`${BASE_URL}/laws`);
       url.searchParams.set("law_title", keyword);
       url.searchParams.set("limit", String(limit));
       url.searchParams.set("repeal_status", "None");
+      url.searchParams.set("response_format", "json");
+      if (offset) url.searchParams.set("offset", String(offset));
 
       const response = await fetch(url, {
         headers: { Accept: "application/json" },
@@ -488,14 +546,35 @@
         throw new Error(`検索APIエラー: HTTP ${response.status}`);
       }
 
-      const payload = await response.json();
-      if (Array.isArray(payload)) return payload;
-      if (payload && typeof payload === "object") {
-        for (const key of ["laws", "results", "items", "data"]) {
-          if (Array.isArray(payload[key])) return payload[key];
+      return response.json();
+    }
+
+    async function searchLaws(keyword, limit) {
+      const pageSize = 100;
+      const maxCandidates = Math.max(limit * 10, 100);
+      const allLaws = [];
+      let offset = 0;
+      let totalCount = 0;
+
+      while (allLaws.length < maxCandidates) {
+        const payload = await fetchLawSearchPage(keyword, pageSize, offset);
+        const laws = extractLawList(payload);
+        const nextOffset = Number(payload?.next_offset);
+
+        if (!totalCount) totalCount = Number(payload?.total_count) || laws.length;
+        allLaws.push(...laws);
+
+        if (!laws.length || !Number.isFinite(nextOffset) || nextOffset <= offset) {
+          break;
         }
+        offset = nextOffset;
       }
-      return [];
+
+      const ranked = rankLawsByTitleMatch(allLaws, keyword).slice(0, limit);
+      return {
+        laws: ranked,
+        totalCount,
+      };
     }
 
     async function fetchLawFile(law, fileType, asof) {
@@ -654,12 +733,12 @@
       appendLog(`検索開始: ${keyword}`);
 
       try {
-        const laws = await searchLaws(keyword, limit);
-        state.laws = laws;
+        const result = await searchLaws(keyword, limit);
+        state.laws = result.laws;
         state.selectedIndexes = new Set();
         renderResults();
-        setStatus(`${laws.length} 件の候補を表示しました。`);
-        appendLog(`検索完了: ${laws.length} 件`);
+        setStatus(`${result.laws.length} 件の候補を表示しました（検索ヒット ${result.totalCount} 件）。`);
+        appendLog(`検索完了: ${result.laws.length} 件表示 / ヒット ${result.totalCount} 件`);
       } catch (error) {
         appendLog(`検索失敗: ${error.message}`);
         setStatus(error.message, true);
