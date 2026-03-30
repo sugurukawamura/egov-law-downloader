@@ -1,52 +1,52 @@
 # egov-law-downloader
 
-Small browser UI for searching e-Gov laws and saving official law files.
+e-Gov 法令 API を使って法令を検索し、本文や添付ファイルを保存するための小さなブラウザ UI です。
 
 ## Files
 
 - `web/index.html`
 - `lawapi-v2.yaml`
 
-## Features
+## できること
 
-- Search laws by title
-- Select one or more laws from the result list
-- Save `XML / JSON / HTML / RTF / DOCX`
-- Open a print-ready `PDF` view from the official HTML law body
-- Download attached files as `ATTACH ZIP`
-- Show status and detailed logs in the page
+- 法令名で検索
+- 検索結果から複数法令を選択
+- `XML / JSON / HTML / RTF / DOCX` を保存
+- 公式HTML本文を印刷ビューで開いて `PDF` 保存
+- 添付ファイルを `ATTACH ZIP` で一括保存
+- ステータスとログを画面内で確認
 
-## PDF behavior
+## PDF の扱い
 
-`law_file` does not provide `pdf` as a valid `file_type`.
+`law_file` は `file_type=pdf` を提供していません。
 
-This app handles `PDF` by:
+このアプリでは、法令本文PDFを次の流れで扱います。
 
-1. Fetching the official `HTML` law body from `law_file/html/...`
-2. Opening a print-ready browser tab that keeps the official page layout as much as possible
-3. Letting the browser print dialog save the law body as PDF
+1. `law_file/html/...` で公式HTML本文を取得
+2. 公式ページの見た目に近い印刷ビューを新しいタブで開く
+3. ブラウザの印刷ダイアログから PDF 保存する
 
-This is intended to be close to the official site PDF output for the law body itself.
+目的は、公式機能で保存できる本文PDFにできるだけ近い形で保存することです。
 
-## Attachment behavior
+## 添付ファイルの扱い
 
-`ATTACH ZIP` downloads all attached files for the selected law through the `attachment` API.
-This is useful for forms, appendix files, and similar attachments.
+`ATTACH ZIP` は `attachment` API を使って添付ファイルを一括取得します。
+様式、付録、図表ファイルなどをまとめて保存したい場合に使います。
 
-## Usage
+## 使い方
 
-1. Open `web/index.html` in a browser
-2. Search for a law
-3. Select the laws you want
-4. Select one or more formats
-5. Optionally enter an as-of date in `YYYY-MM-DD`
-6. Save the selected outputs
+1. `web/index.html` をブラウザで開く
+2. 法令名で検索する
+3. 保存したい法令を選ぶ
+4. 保存形式を選ぶ
+5. 必要なら `YYYY-MM-DD` 形式で基準日を入力する
+6. 保存を実行する
 
-## Notes
+## 備考
 
-- The repository MIT License applies to source code only
-- Retrieved law data and generated outputs follow e-Gov data terms
-- Browser CORS restrictions may affect direct API access in some environments
+- このリポジトリの MIT License はソースコードのみに適用されます
+- 取得した法令データや出力物は e-Gov 側の利用条件に従います
+- 環境によってはブラウザからの直接APIアクセスが CORS の影響を受けることがあります
 
 ## License
 
