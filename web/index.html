@@ -303,6 +303,7 @@
     const state = {
       laws: [],
       selectedIndexes: new Set(),
+      attachmentMeta: {},
     };
 
     const fileTypesRoot = document.getElementById("fileTypes");
@@ -444,6 +445,21 @@
       return `[${index}] ${lawNum} | 日付: ${pickDateString(law)}`;
     }
 
+    function lawStateKey(law) {
+      const info = law.law_info || {};
+      const current = law.current_revision_info || {};
+      const revision = law.revision_info || {};
+      return String(current.law_revision_id || revision.law_revision_id || info.law_id || info.law_num || lawTitle(law));
+    }
+
+    function attachmentInfoText(law) {
+      const info = state.attachmentMeta[lawStateKey(law)];
+      if (!info || info.status === "loading") return "添付: 確認中";
+      if (info.status === "error") return "添付: 確認失敗";
+      if (!info.count) return "添付: なし";
+      return `添付: ${info.count}件 (${info.summary})`;
+    }
+
     function selectedFileTypes() {
       return SUPPORTED_TYPES.filter((name) => {
         const checkbox = document.getElementById(`file-${name}`);
@@ -525,7 +541,7 @@
 
         const meta = document.createElement("div");
         meta.className = "law-meta";
-        meta.textContent = summaryForLaw(law, index);
+        meta.textContent = `${summaryForLaw(law, index)} | ${attachmentInfoText(law)}`;
 
         content.appendChild(title);
         content.appendChild(meta);
@@ -613,6 +629,34 @@
       return response.json();
     }
 
+    async function enrichAttachmentMeta(laws, asof) {
+      const targets = laws.filter(Boolean);
+      const chunkSize = 5;
+
+      for (let index = 0; index < targets.length; index += chunkSize) {
+        const chunk = targets.slice(index, index + chunkSize);
+        await Promise.all(chunk.map(async (law) => {
+          const key = lawStateKey(law);
+          state.attachmentMeta[key] = { status: "loading" };
+          renderResults();
+
+          try {
+            const payload = await fetchLawData(law, asof);
+            const attachedFiles = (((payload || {}).attached_files_info || {}).attached_files || []);
+            state.attachmentMeta[key] = {
+              status: "ready",
+              count: attachedFiles.length,
+              summary: summarizeAttachmentKinds(attachedFiles),
+            };
+          } catch (error) {
+            state.attachmentMeta[key] = { status: "error" };
+          }
+
+          renderResults();
+        }));
+      }
+    }
+
     async function fetchAttachment(lawRevisionId, src) {
       const url = new URL(`${BASE_URL}/attachment/${lawRevisionId}`);
       if (src) url.searchParams.set("src", src);
@@ -652,6 +696,23 @@
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([ext, count]) => `${ext} ${count}`)
         .join(", ");
+    }
+
+    function attachmentFilenameSuffix(attachedFiles) {
+      if (!attachedFiles.length) return "添付なし";
+
+      const counts = new Map();
+      for (const item of attachedFiles) {
+        const src = String((item || {}).src || "");
+        const match = src.toLowerCase().match(/\.([a-z0-9]+)$/);
+        const ext = match ? match[1].toUpperCase() : "UNKNOWN";
+        counts.set(ext, (counts.get(ext) || 0) + 1);
+      }
+
+      return Array.from(counts.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([ext, count]) => `${ext}${count}`)
+        .join("_");
     }
 
     function openPrintWindow(title) {
@@ -710,8 +771,11 @@
 
       const revisionId = lawRevisionIdentifier(law, payload);
       appendLog(`添付一括取得を準備: ${summarizeAttachmentKinds(attachedFiles)}`);
-      return fetchAttachment(revisionId, "");
-    }
+        return {
+          blob: await fetchAttachment(revisionId, ""),
+          attachedFiles,
+        };
+      }
 
     function triggerDownload(blob, filename) {
       const url = URL.createObjectURL(blob);
@@ -738,12 +802,21 @@
       appendLog(`検索開始: ${keyword}`);
 
       try {
+        let asof = "";
+        try {
+          asof = parseAsofDate(document.getElementById("asof").value.trim());
+        } catch (error) {
+          asof = "";
+        }
+
         const result = await searchLaws(keyword, limit);
         state.laws = result.laws;
         state.selectedIndexes = new Set();
+        state.attachmentMeta = {};
         renderResults();
         setStatus(`${result.laws.length} 件の候補を表示しました（検索ヒット ${result.totalCount} 件）。`);
         appendLog(`検索完了: ${result.laws.length} 件表示 / ヒット ${result.totalCount} 件`);
+        enrichAttachmentMeta(result.laws, asof);
       } catch (error) {
         appendLog(`検索失敗: ${error.message}`);
         setStatus(error.message, true);
@@ -800,9 +873,9 @@
               renderPrintWindow(pdfTarget.window, htmlText, pdfTarget.filename);
               appendLog(`印刷ビューを開きました: ${pdfTarget.filename}`);
             } else if (fileType === "attachments") {
-              const blob = await fetchAttachmentArchiveBlob(law, asof);
-              const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}_attachments.zip`;
-              triggerDownload(blob, filename);
+              const attachmentArchive = await fetchAttachmentArchiveBlob(law, asof);
+              const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}_添付ファイル_${attachmentFilenameSuffix(attachmentArchive.attachedFiles)}.zip`;
+              triggerDownload(attachmentArchive.blob, filename);
               appendLog(`保存完了: ${filename}`);
             } else {
               const blob = await fetchLawFile(law, fileType, asof);
