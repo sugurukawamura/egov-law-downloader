@@ -1,77 +1,53 @@
 # egov-law-downloader
 
-e-Gov法令API Version 2 を使って、法令を検索し、本文ファイルを保存するツールです。
+Small browser UI for searching e-Gov laws and saving official law files.
 
-現在の主役は、OS に依存しないブラウザ版 UI です。Windows / Mac / Linux で、ブラウザがあれば使えます。
-
-## いちばん簡単な使い方
-
-次のファイルをブラウザで開いてください。
+## Files
 
 - `web/index.html`
+- `lawapi-v2.yaml`
 
-## ブラウザ版 UI でできること
+## Features
 
-- 法令名で検索
-- 候補を複数選択
-- 保存形式を複数選択
-- 複数ファイルをまとめてダウンロード
-- `PDF` を選んで、人が読みやすいレイアウトの PDF を自動生成
-- 実行ログで処理状況を確認
+- Search laws by title
+- Select one or more laws from the result list
+- Save `XML / JSON / HTML / RTF / DOCX`
+- Open a print-ready `PDF` view from the official HTML law body
+- Download attached files as `ATTACH ZIP`
+- Show status and detailed logs in the page
 
-## 画面の流れ
+## PDF behavior
 
-1. 法令名を入力
-2. `法令を検索` を押す
-3. 候補一覧から保存したい法令を複数選択
-4. 保存形式をチェック
-5. `選択した法令を保存` を押す
-6. 通常形式はブラウザのダウンロードとして保存
-7. `PDF` はブラウザ内で生成して保存
+`law_file` does not provide `pdf` as a valid `file_type`.
 
-## 保存先について
+This app handles `PDF` by:
 
-ブラウザ版は、通常はブラウザの標準ダウンロード先へ保存されます。保存先フォルダはブラウザ側の設定に従います。
+1. Fetching the official `HTML` law body from `law_file/html/...`
+2. Opening a print-ready browser tab that keeps the official page layout as much as possible
+3. Letting the browser print dialog save the law body as PDF
 
-## 保存ファイル名
+This is intended to be close to the official site PDF output for the law body itself.
 
-保存ファイル名は次の形式です。
+## Attachment behavior
 
-```text
-法令名_YYYYMMDD.拡張子
-```
+`ATTACH ZIP` downloads all attached files for the selected law through the `attachment` API.
+This is useful for forms, appendix files, and similar attachments.
 
-例:
+## Usage
 
-```text
-民法_18960427.html
-民法_18960427.pdf
-```
+1. Open `web/index.html` in a browser
+2. Search for a law
+3. Select the laws you want
+4. Select one or more formats
+5. Optionally enter an as-of date in `YYYY-MM-DD`
+6. Save the selected outputs
 
-日付は API レスポンスの中から、次の優先順で選ばれます。
+## Notes
 
-1. 改正施行日
-2. 改正公布日
-3. 更新日
-4. 公布日
-5. どれも無い場合は実行日
+- The repository MIT License applies to source code only
+- Retrieved law data and generated outputs follow e-Gov data terms
+- Browser CORS restrictions may affect direct API access in some environments
 
-## 注意点
-
-- ブラウザ版は e-Gov API にブラウザから直接アクセスします
-- 環境によっては CORS 制限や複数ダウンロード制限の影響を受けることがあります
-- `PDF` は e-Gov 公式 PDF ではなく、取得した本文をブラウザ内で読みやすく整形したものです
-
-## 出典とデータ利用について
-
-- 本アプリは e-Gov法令検索 / 法令API Version 2 のデータを利用します
-- 出典: e-Gov法令検索 (<https://laws.e-gov.go.jp/>)
-- 保存した `PDF` は、e-Gov の HTML 等をもとに本アプリが生成した非公式の加工物です
-- 取得した法令データや保存ファイルを再配布・転載・業務利用する場合は、e-Gov 側の利用規約・出典表示ルールを確認してください
-- 添付画像や様式など、第三者の権利が含まれる可能性のあるデータを扱う場合は追加の権利確認が必要になることがあります
-
-## ライセンス
+## License
 
 MIT License
-
-この MIT License は本リポジトリのソースコードに対するものです。e-Gov から取得した法令データや、そのデータをもとに生成した保存ファイル自体に MIT License が適用されるわけではありません。
