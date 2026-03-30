@@ -171,6 +171,7 @@ cython_debug/
 # Local test artifacts / downloaded specs
 tests/
 lawapi-v2.yaml
+.playwright-cli/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

@@ -1,46 +1,52 @@
 # egov-law-downloader
 
-e-Gov法令API Version 2 を使って法令を検索し、ブラウザから保存する小さなUIです。
+Small browser UI for searching e-Gov laws and saving official law files.
 
 ## Files
 
 - `web/index.html`
 - `lawapi-v2.yaml`
 
-## できること
+## Features
 
-- 法令名で検索
-- 検索結果から対象法令を複数選択
-- `XML / JSON / HTML / RTF / DOCX / PDF` を選んで保存
-- 取得状況とエラー内容を画面内ログで確認
+- Search laws by title
+- Select one or more laws from the result list
+- Save `XML / JSON / HTML / RTF / DOCX`
+- Open a print-ready `PDF` view from the official HTML law body
+- Download attached files as `ATTACH ZIP`
+- Show status and detailed logs in the page
 
-## 使い方
+## PDF behavior
 
-1. ブラウザで `web/index.html` を開く
-2. 法令名を入力して検索する
-3. 保存したい法令を選ぶ
-4. 保存形式を選ぶ
-5. 必要なら基準日を `YYYY-MM-DD` 形式で入力する
-6. ダウンロードを実行する
+`law_file` does not provide `pdf` as a valid `file_type`.
 
-## 保存形式
+This app handles `PDF` by:
 
-`law_file` エンドポイントの `file_type` で使えるのは次の5種類です。
+1. Fetching the official `HTML` law body from `law_file/html/...`
+2. Opening a print-ready browser tab that keeps the official page layout as much as possible
+3. Letting the browser print dialog save the law body as PDF
 
-- `xml`
-- `json`
-- `html`
-- `rtf`
-- `docx`
+This is intended to be close to the official site PDF output for the law body itself.
 
-`pdf` は `law_file` ではなく、`law_data` で添付ファイル一覧を取り、`attachment` から公式 PDF を取得します。
-添付 PDF が存在しない法令では、取得できない旨のエラーを表示します。
+## Attachment behavior
 
-## 備考
+`ATTACH ZIP` downloads all attached files for the selected law through the `attachment` API.
+This is useful for forms, appendix files, and similar attachments.
 
-- これは e-Gov の公式UIではありません
-- 実際の取得可否やレスポンス内容は e-Gov API の仕様に従います
-- 法令データの利用条件は e-Gov 側の案内を確認してください
+## Usage
+
+1. Open `web/index.html` in a browser
+2. Search for a law
+3. Select the laws you want
+4. Select one or more formats
+5. Optionally enter an as-of date in `YYYY-MM-DD`
+6. Save the selected outputs
+
+## Notes
+
+- The repository MIT License applies to source code only
+- Retrieved law data and generated outputs follow e-Gov data terms
+- Browser CORS restrictions may affect direct API access in some environments
 
 ## License
 

@@ -1,251 +1,288 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>e-Gov 法令ダウンローダー</title>
+  <title>e-Gov Law Downloader</title>
   <style>
     :root {
-      --bg: #f5efe4;
-      --panel: rgba(255, 253, 248, 0.94);
-      --ink: #1d2a33;
-      --accent: #007a78;
-      --line: #d8cdbd;
-      --error: #8b2e00;
-      --log-bg: #162329;
-      --log-ink: #d9f8ed;
-      --sans: "Hiragino Sans", "Yu Gothic", sans-serif;
-      --mono: "SFMono-Regular", "Menlo", monospace;
+      --bg: #f3efe8;
+      --panel: #fffdfa;
+      --line: #d7cbbb;
+      --text: #1f2d2f;
+      --muted: #5f6f71;
+      --accent: #9f3a22;
+      --accent-soft: #f5e2da;
+      --error: #9d1b1b;
+      --shadow: 0 16px 40px rgba(49, 35, 22, 0.08);
     }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      color: var(--ink);
-      font-family: var(--sans);
+      font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      color: var(--text);
       background:
-        radial-gradient(circle at top left, #fff7df 0, transparent 32%),
-        linear-gradient(160deg, #efe4cf 0%, #f5efe4 55%, #e8efe8 100%);
-      min-height: 100vh;
+        radial-gradient(circle at top left, #fff8ef 0, transparent 36%),
+        linear-gradient(180deg, #efe5d7 0%, var(--bg) 45%, #ebe6de 100%);
     }
+
     .wrap {
-      width: min(1120px, calc(100% - 32px));
+      width: min(1100px, calc(100% - 32px));
       margin: 24px auto 40px;
     }
-    .hero, .panel {
-      border: 1px solid var(--line);
+
+    .hero,
+    .panel {
       background: var(--panel);
-      border-radius: 22px;
-      box-shadow: 0 18px 50px rgba(61, 52, 40, 0.08);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
     }
+
     .hero {
-      padding: 24px 28px;
+      padding: 28px;
+      margin-bottom: 18px;
     }
-    h1 {
-      margin: 0 0 8px;
-      font-size: clamp(28px, 4vw, 44px);
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 5vw, 44px);
+      line-height: 1.1;
     }
+
     .lead {
-      margin: 0;
+      margin: 0 0 16px;
+      color: var(--muted);
       line-height: 1.7;
     }
+
+    .notice {
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #faf3e7;
+      border: 1px solid #e5d4bc;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
     .grid {
       display: grid;
-      grid-template-columns: 1.05fr 0.95fr;
+      grid-template-columns: minmax(320px, 420px) 1fr;
       gap: 18px;
-      margin-top: 18px;
     }
+
     .panel {
-      padding: 18px;
+      padding: 20px;
     }
+
     .panel h2 {
-      margin: 0 0 12px;
-      font-size: 18px;
+      margin: 0 0 14px;
+      font-size: 20px;
     }
+
     .row {
       display: grid;
-      grid-template-columns: 1fr 180px;
+      grid-template-columns: 1fr 120px;
       gap: 12px;
     }
+
     label {
       display: block;
-      margin-bottom: 8px;
-      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 6px;
+      color: var(--muted);
     }
-    input[type="text"], input[type="number"] {
+
+    input[type="text"],
+    input[type="number"] {
       width: 100%;
-      padding: 12px 14px;
+      border: 1px solid var(--line);
       border-radius: 12px;
-      border: 1px solid #cdbfaa;
+      padding: 10px 12px;
+      font: inherit;
       background: #fff;
-      font-size: 15px;
+      color: var(--text);
     }
-    .file-types, .actions {
+
+    .actions {
       display: flex;
       gap: 10px;
+      margin-top: 14px;
       flex-wrap: wrap;
     }
-    .pill {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      border-radius: 999px;
-      border: 1px solid #cdbfaa;
-      background: #fff;
-      font-size: 14px;
-    }
+
     button {
-      appearance: none;
       border: 0;
       border-radius: 999px;
-      padding: 12px 18px;
-      font-weight: 700;
-      font-size: 14px;
+      padding: 11px 18px;
+      font: inherit;
       cursor: pointer;
+      color: #fff;
       background: var(--accent);
-      color: white;
     }
+
     button.secondary {
-      background: #e7ece8;
-      color: var(--ink);
+      color: var(--accent);
+      background: var(--accent-soft);
     }
+
     button:disabled {
       opacity: 0.55;
-      cursor: wait;
+      cursor: default;
     }
-    .results {
+
+    .file-types {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .pill,
+    .law-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+    }
+
+    .status {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f7f1e8;
+      color: var(--text);
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+    }
+
+    .status.error {
+      background: #fde8e8;
+      color: var(--error);
+    }
+
+    .hint {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    #results {
       display: grid;
       gap: 10px;
-      max-height: 440px;
-      overflow: auto;
-      padding-right: 6px;
     }
+
     .law-card {
-      border: 1px solid #dccfbf;
-      border-radius: 14px;
-      background: white;
-      padding: 12px 14px;
       display: grid;
-      grid-template-columns: 28px 1fr;
+      grid-template-columns: auto 1fr;
       gap: 12px;
+      padding: 12px 14px;
+      align-items: start;
     }
+
     .law-title {
       font-weight: 700;
       margin-bottom: 4px;
     }
+
     .law-meta {
-      color: #5d6a72;
-      font-size: 13px;
+      color: var(--muted);
+      font-size: 14px;
       line-height: 1.6;
     }
-    .status {
-      margin-top: 12px;
-      min-height: 24px;
-      font-weight: 700;
-      color: #0b6b63;
-    }
-    .status.error {
-      color: var(--error);
-    }
+
     .log {
-      background: var(--log-bg);
-      color: var(--log-ink);
-      border-radius: 14px;
-      padding: 14px;
-      min-height: 260px;
-      white-space: pre-wrap;
-      font-family: var(--mono);
-      font-size: 13px;
-      line-height: 1.7;
+      margin-top: 14px;
+      min-height: 280px;
+      max-height: 520px;
       overflow: auto;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #1f2527;
+      color: #e8f0ef;
+      font: 13px/1.6 Consolas, monospace;
+      white-space: pre-wrap;
     }
-    .hint {
-      margin-top: 10px;
-      font-size: 13px;
-      color: #5d6a72;
-      line-height: 1.6;
-    }
-    .notice {
-      margin-top: 18px;
-      padding: 14px 16px;
-      border: 1px solid #d7c7b2;
-      border-radius: 16px;
-      background: rgba(255, 250, 242, 0.96);
-      font-size: 13px;
-      line-height: 1.7;
-      color: #415058;
-    }
-    .notice strong {
-      color: #1d2a33;
-    }
-    .notice a {
-      color: var(--accent);
-    }
+
     @media (max-width: 860px) {
-      .grid, .row { grid-template-columns: 1fr; }
-      .wrap { width: min(100% - 20px, 1100px); }
+      .grid,
+      .row {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <section class="hero">
-      <h1>e-Gov 法令ダウンローダー</h1>
-      <p class="lead">このファイルは Mac 専用ではありません。ブラウザで開けば、Windows / Mac / Linux で使えます。検索結果から複数の法令を選び、複数形式をまとめてダウンロードできます。</p>
+      <h1>e-Gov Law Downloader</h1>
+      <p class="lead">Search Japanese laws in the browser and save the formats you need. Works on Windows, Mac, and Linux.</p>
       <div class="notice">
-        <strong>出典:</strong> <a href="https://laws.e-gov.go.jp/" target="_blank" rel="noreferrer">e-Gov法令検索</a><br>
-        本アプリの MIT License はソースコードにのみ適用されます。取得した法令データや保存ファイルは別扱いです。<br>
-        `PDF` は e-Gov API の添付ファイルとして提供される公式 PDF を、そのまま保存します。
+        <strong>Source:</strong> <a href="https://laws.e-gov.go.jp/" target="_blank" rel="noreferrer">e-Gov Law Search</a><br>
+        The MIT License in this repository applies to source code only.<br>
+        <code>PDF</code> opens an HTML print view that closely matches the official law page layout, so you can save the law body as PDF from the browser print dialog.
       </div>
     </section>
 
     <div class="grid">
       <section class="panel">
-        <h2>1. 検索条件</h2>
+        <h2>1. Search</h2>
         <div class="row">
           <div>
-            <label for="keyword">法令名</label>
-            <input id="keyword" type="text" placeholder="例: 民法">
+            <label for="keyword">Law title</label>
+            <input id="keyword" type="text" placeholder="Example: Civil Code">
           </div>
           <div>
-            <label for="limit">候補件数</label>
+            <label for="limit">Limit</label>
             <input id="limit" type="number" min="1" value="10">
           </div>
         </div>
-        <div style="margin-top:12px;">
-          <label for="asof">時点 (任意)</label>
+
+        <div style="margin-top: 12px;">
+          <label for="asof">As-of date (optional)</label>
           <input id="asof" type="text" placeholder="YYYY-MM-DD">
         </div>
-        <div style="margin-top:14px;">
-          <label>2. ダウンロード形式</label>
-          <div class="file-types" id="fileTypes"></div>
+
+        <div style="margin-top: 14px;">
+          <label>2. Download formats</label>
+          <div id="fileTypes" class="file-types"></div>
         </div>
-        <div class="actions" style="margin-top:14px;">
-          <button id="searchButton">法令を検索</button>
-          <button id="downloadButton" class="secondary">選択した法令を保存</button>
+
+        <div class="actions">
+          <button id="searchButton">Search Laws</button>
+          <button id="downloadButton" class="secondary">Save Selected Laws</button>
         </div>
-        <div id="status" class="status">待機中</div>
-        <p class="hint">通常はブラウザの「ダウンロード」フォルダへ保存されます。複数ファイルをまとめて落とすので、ブラウザ側で複数ダウンロード許可が必要な場合があります。</p>
-        <p class="hint">`PDF` は `law_data` / `attachment` API を使って、e-Gov の添付ファイルとして提供される公式 PDF をそのまま保存します。PDF がない法令では取得できません。</p>
-        <p class="hint">もし検索に失敗する場合は、e-Gov API の CORS 制限でブラウザから直接アクセスできない可能性があります。その場合は補助サーバー方式に切り替える必要があります。</p>
+
+        <div id="status" class="status">Idle</div>
+        <p class="hint">Files are usually saved to the browser's default download folder.</p>
+        <p class="hint"><code>PDF</code> opens a print-ready view from the official HTML law body. Use the browser print dialog to save it as PDF.</p>
+        <p class="hint"><code>ATTACH ZIP</code> downloads all attached files, such as forms and appendix files, as a single zip when attachments exist.</p>
+        <p class="hint">If search fails in the browser, CORS restrictions may block direct access to the e-Gov API.</p>
       </section>
 
       <section class="panel">
-        <h2>3. 検索結果</h2>
-        <div id="results" class="results"></div>
-      </section>
-
-      <section class="panel" style="grid-column: 1 / -1;">
-        <h2>4. 実行ログ</h2>
-        <div id="log" class="log">アプリを起動しました。検索条件を入力してください。</div>
+        <h2>3. Results</h2>
+        <div id="results">
+          <div class="hint">Search results will appear here.</div>
+        </div>
+        <div id="log" class="log">Logs will appear here.</div>
       </section>
     </div>
   </div>
 
   <script>
     const BASE_URL = "https://laws.e-gov.go.jp/api/2";
-    const SUPPORTED_TYPES = ["xml", "json", "html", "rtf", "docx", "pdf"];
-    // 検索結果と、ユーザーがチェックした候補番号を覚えておく場所です。
+    const SUPPORTED_TYPES = ["xml", "json", "html", "rtf", "docx", "pdf", "attachments"];
     const state = {
       laws: [],
       selectedIndexes: new Set(),
@@ -259,7 +296,7 @@
     const downloadButton = document.getElementById("downloadButton");
 
     function appendLog(message) {
-      logRoot.textContent += "\n" + message;
+      logRoot.textContent += `\n${message}`;
       logRoot.scrollTop = logRoot.scrollHeight;
     }
 
@@ -269,12 +306,14 @@
     }
 
     function sanitizeFilename(name) {
-      const sanitized = name.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim();
-      return (sanitized || "法令").slice(0, 120);
+      const sanitized = String(name || "")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/\s+/g, " ")
+        .trim();
+      return (sanitized || "law").slice(0, 120);
     }
 
     function pickDateString(law) {
-      // API が返す日付候補の中から、ファイル名に使う日付を優先順で選びます。
       const current = law.current_revision_info || {};
       const info = law.law_info || {};
       const candidates = [
@@ -285,27 +324,26 @@
       ];
 
       for (const value of candidates) {
-        if (!value) continue;
-        const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
         if (match) return `${match[1]}${match[2]}${match[3]}`;
       }
 
       const now = new Date();
-      const y = String(now.getFullYear());
-      const m = String(now.getMonth() + 1).padStart(2, "0");
-      const d = String(now.getDate()).padStart(2, "0");
-      return `${y}${m}${d}`;
+      return [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+      ].join("");
     }
 
     function lawTitle(law) {
       const info = law.law_info || {};
       const current = law.current_revision_info || {};
       const revision = law.revision_info || {};
-      return current.law_title || revision.law_title || info.law_title || "名称不明";
+      return current.law_title || revision.law_title || info.law_title || "Unknown law";
     }
 
     function lawIdentifier(law) {
-      // ダウンロード API が受け付ける識別子を、優先順で探します。
       const info = law.law_info || {};
       const current = law.current_revision_info || {};
       const revision = law.revision_info || {};
@@ -317,15 +355,12 @@
         if (source.law_id) return String(source.law_id);
         if (source.law_num) return String(source.law_num);
       }
-      throw new Error("law_id、law_num、law_revision_id が見つかりませんでした。");
+      throw new Error("No usable law identifier was found.");
     }
 
     function summaryForLaw(law, index) {
-      const parts = [lawTitle(law)];
-      const lawNum = (law.law_info || {}).law_num;
-      if (lawNum) parts.push(`法令番号: ${lawNum}`);
-      parts.push(`日付: ${pickDateString(law)}`);
-      return `[${index}] ${parts.join(" | ")}`;
+      const lawNum = (law.law_info || {}).law_num || "No law number";
+      return `[${index}] ${lawNum} | Date: ${pickDateString(law)}`;
     }
 
     function selectedFileTypes() {
@@ -342,28 +377,23 @@
       return { Accept: "*/*" };
     }
 
-    function lawNumber(law) {
-      return (law.law_info || {}).law_num || "";
-    }
-
     function parseAsofDate(value) {
       if (!value) return "";
       const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (!match) {
-        throw new Error("時点は YYYY-MM-DD 形式で入力してください。");
+        throw new Error("As-of date must use YYYY-MM-DD.");
       }
 
       const year = Number(match[1]);
       const month = Number(match[2]);
       const day = Number(match[3]);
       const date = new Date(Date.UTC(year, month - 1, day));
-
       if (
         date.getUTCFullYear() !== year ||
         date.getUTCMonth() + 1 !== month ||
         date.getUTCDate() !== day
       ) {
-        throw new Error("時点の日付が正しくありません。");
+        throw new Error("As-of date is invalid.");
       }
 
       return value;
@@ -374,7 +404,7 @@
       SUPPORTED_TYPES.forEach((name, index) => {
         const wrapper = document.createElement("label");
         wrapper.className = "pill";
-        const label = name === "pdf" ? "PDF" : name.toUpperCase();
+        const label = name === "attachments" ? "ATTACH ZIP" : name.toUpperCase();
         wrapper.innerHTML = `<input type="checkbox" id="file-${name}" ${index === 2 ? "checked" : ""}> ${label}`;
         fileTypesRoot.appendChild(wrapper);
       });
@@ -383,7 +413,7 @@
     function renderResults() {
       resultsRoot.innerHTML = "";
       if (!state.laws.length) {
-        resultsRoot.innerHTML = "<div class='hint'>検索するとここに候補が表示されます。</div>";
+        resultsRoot.innerHTML = "<div class='hint'>Search results will appear here.</div>";
         return;
       }
 
@@ -391,12 +421,18 @@
         const index = idx + 1;
         const card = document.createElement("label");
         card.className = "law-card";
+
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.dataset.index = String(index);
         checkbox.checked = state.selectedIndexes.has(index);
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) state.selectedIndexes.add(index);
+          else state.selectedIndexes.delete(index);
+        });
 
         const content = document.createElement("div");
+
         const title = document.createElement("div");
         title.className = "law-title";
         title.textContent = lawTitle(law);
@@ -409,27 +445,23 @@
         content.appendChild(meta);
         card.appendChild(checkbox);
         card.appendChild(content);
-        checkbox.addEventListener("change", () => {
-          if (checkbox.checked) state.selectedIndexes.add(index);
-          else state.selectedIndexes.delete(index);
-        });
         resultsRoot.appendChild(card);
       });
     }
 
     async function searchLaws(keyword, limit) {
-      // 検索 API を呼んで、画面に出す候補一覧を取得します。
       const url = new URL(`${BASE_URL}/laws`);
       url.searchParams.set("law_title", keyword);
       url.searchParams.set("limit", String(limit));
       url.searchParams.set("repeal_status", "None");
 
       const response = await fetch(url, {
-        headers: { "Accept": "application/json" },
+        headers: { Accept: "application/json" },
       });
       if (!response.ok) {
-        throw new Error(`検索APIエラー: HTTP ${response.status}`);
+        throw new Error(`Search API error: HTTP ${response.status}`);
       }
+
       const payload = await response.json();
       if (Array.isArray(payload)) return payload;
       if (payload && typeof payload === "object") {
@@ -441,7 +473,6 @@
     }
 
     async function fetchLawFile(law, fileType, asof) {
-      // 1 件の法令を、1 つの形式で取得します。
       const identifier = lawIdentifier(law);
       const url = new URL(`${BASE_URL}/law_file/${fileType}/${identifier}`);
       if (asof) url.searchParams.set("asof", asof);
@@ -449,12 +480,10 @@
       const response = await fetch(url, {
         headers: requestHeaders(fileType),
       });
-
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(`取得失敗: HTTP ${response.status} / ${detail.slice(0, 200)}`);
+        throw new Error(`Download failed: HTTP ${response.status} / ${detail.slice(0, 200)}`);
       }
-
       return response.blob();
     }
 
@@ -467,12 +496,10 @@
       const response = await fetch(url, {
         headers: { Accept: "application/json" },
       });
-
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(`法令本文取得失敗: HTTP ${response.status} / ${detail.slice(0, 200)}`);
+        throw new Error(`law_data failed: HTTP ${response.status} / ${detail.slice(0, 200)}`);
       }
-
       return response.json();
     }
 
@@ -483,29 +510,100 @@
       const response = await fetch(url, {
         headers: { Accept: "*/*" },
       });
-
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(`添付ファイル取得失敗: HTTP ${response.status} / ${detail.slice(0, 200)}`);
+        throw new Error(`attachment failed: HTTP ${response.status} / ${detail.slice(0, 200)}`);
       }
-
       return response.blob();
     }
 
-    async function fetchOfficialPdfBlob(law, asof) {
-      const payload = await fetchLawData(law, asof);
-      const attachedFiles = (((payload || {}).attached_files_info || {}).attached_files || []);
-      const pdfAttachment = attachedFiles.find((item) => String(item.src || "").toLowerCase().endsWith(".pdf"));
+    function lawRevisionIdentifier(law, payload) {
+      const current = law.current_revision_info || {};
+      const revision = law.revision_info || {};
+      const payloadRevision = (payload || {}).revision_info || {};
 
-      if (!pdfAttachment || !pdfAttachment.law_revision_id || !pdfAttachment.src) {
-        throw new Error("この法令には取得可能な公式 PDF が見つかりませんでした。");
+      for (const source of [current, revision, payloadRevision]) {
+        if (source.law_revision_id) return String(source.law_revision_id);
+      }
+      throw new Error("No law_revision_id was found for attachment download.");
+    }
+
+    function summarizeAttachmentKinds(attachedFiles) {
+      const counts = new Map();
+      for (const item of attachedFiles) {
+        const src = String((item || {}).src || "");
+        const match = src.toLowerCase().match(/\.([a-z0-9]+)$/);
+        const ext = match ? match[1].toUpperCase() : "UNKNOWN";
+        counts.set(ext, (counts.get(ext) || 0) + 1);
       }
 
-      return fetchAttachment(String(pdfAttachment.law_revision_id), String(pdfAttachment.src));
+      if (!counts.size) return "none";
+      return Array.from(counts.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([ext, count]) => `${ext} ${count}`)
+        .join(", ");
+    }
+
+    function openPrintWindow(title) {
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        throw new Error("Could not open the PDF print window. Please allow pop-ups for this page.");
+      }
+
+      printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><p>Preparing print view...</p></body></html>`);
+      printWindow.document.close();
+      return printWindow;
+    }
+
+    function buildPrintableHtml(htmlText, filename) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+
+      doc.querySelectorAll("script").forEach((node) => node.remove());
+      doc.title = filename;
+
+      const base = doc.createElement("base");
+      base.href = "https://laws.e-gov.go.jp/";
+      doc.head.prepend(base);
+
+      const style = doc.createElement("style");
+      style.textContent = `
+        @page { size: A4; margin: 14mm 12mm 16mm; }
+        html, body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      `;
+      doc.head.appendChild(style);
+
+      const script = doc.createElement("script");
+      script.textContent = "window.onload = () => setTimeout(() => window.print(), 300);";
+      doc.body.appendChild(script);
+
+      return "<!doctype html>\n" + doc.documentElement.outerHTML;
+    }
+
+    function renderPrintWindow(printWindow, htmlText, filename) {
+      printWindow.document.open();
+      printWindow.document.write(buildPrintableHtml(htmlText, filename));
+      printWindow.document.close();
+    }
+
+    async function fetchPrintableLawHtml(law, asof) {
+      const htmlBlob = await fetchLawFile(law, "html", asof);
+      return htmlBlob.text();
+    }
+
+    async function fetchAttachmentArchiveBlob(law, asof) {
+      const payload = await fetchLawData(law, asof);
+      const attachedFiles = (((payload || {}).attached_files_info || {}).attached_files || []);
+      if (!attachedFiles.length) {
+        throw new Error(`${lawTitle(law)} has no attachments.`);
+      }
+
+      const revisionId = lawRevisionIdentifier(law, payload);
+      appendLog(`Attachment archive ready: ${summarizeAttachmentKinds(attachedFiles)}`);
+      return fetchAttachment(revisionId, "");
     }
 
     function triggerDownload(blob, filename) {
-      // JavaScript からブラウザの通常ダウンロードを発生させます。
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -521,31 +619,23 @@
       const limit = Number(document.getElementById("limit").value);
 
       if (!keyword) {
-        setStatus("法令名を入力してください。", true);
-        return;
-      }
-      if (!Number.isInteger(limit) || limit < 1) {
-        setStatus("候補件数は 1 以上の整数で入力してください。", true);
+        setStatus("Enter a law title.", true);
         return;
       }
 
       searchButton.disabled = true;
-      state.laws = [];
-      state.selectedIndexes.clear();
-      renderResults();
-      setStatus("検索中です...");
-      appendLog("検索開始: API へ法令候補を問い合わせます。");
+      setStatus("Searching...");
+      appendLog(`Search start: ${keyword}`);
 
       try {
-        state.laws = await searchLaws(keyword, limit);
+        const laws = await searchLaws(keyword, limit);
+        state.laws = laws;
+        state.selectedIndexes = new Set(laws.map((_, index) => index + 1));
         renderResults();
-        appendLog(`検索完了: ${state.laws.length} 件の候補を表示しました。`);
-        setStatus(`検索完了: ${state.laws.length} 件`);
+        setStatus(`Loaded ${laws.length} result(s).`);
+        appendLog(`Search complete: ${laws.length} result(s)`);
       } catch (error) {
-        state.laws = [];
-        state.selectedIndexes.clear();
-        renderResults();
-        appendLog(`検索失敗: ${error.message}`);
+        appendLog(`Search failed: ${error.message}`);
         setStatus(error.message, true);
       } finally {
         searchButton.disabled = false;
@@ -558,13 +648,14 @@
       let asof = "";
 
       if (!indexes.length) {
-        setStatus("保存したい法令を 1 件以上選択してください。", true);
+        setStatus("Select at least one law.", true);
         return;
       }
       if (!fileTypes.length) {
-        setStatus("保存形式を 1 つ以上選択してください。", true);
+        setStatus("Select at least one file type.", true);
         return;
       }
+
       try {
         asof = parseAsofDate(document.getElementById("asof").value.trim());
       } catch (error) {
@@ -573,29 +664,49 @@
       }
 
       downloadButton.disabled = true;
-      setStatus("ダウンロード中です...");
-      appendLog("保存開始: 選択した法令を順番にダウンロードします。");
+      setStatus("Downloading...");
+      appendLog("Save start: processing selected laws.");
 
       try {
         let savedCount = 0;
-        // まず法令ごとに回し、その中で形式ごとに保存を実行します。
+        const pdfWindows = new Map();
+        if (fileTypes.includes("pdf")) {
+          for (const index of indexes) {
+            const law = state.laws[index - 1];
+            const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.pdf`;
+            pdfWindows.set(index, { window: openPrintWindow(filename), filename });
+          }
+        }
+
         for (const index of indexes) {
           const law = state.laws[index - 1];
-          appendLog(`対象法令: ${lawTitle(law)}`);
+          appendLog(`Target law: ${lawTitle(law)}`);
+
           for (const fileType of fileTypes) {
-            appendLog(`ダウンロード中: ${lawTitle(law)} (${fileType})`);
-            const blob = fileType === "pdf"
-              ? await fetchOfficialPdfBlob(law, asof)
-              : await fetchLawFile(law, fileType, asof);
-            const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.${fileType}`;
-            triggerDownload(blob, filename);
-            appendLog(`保存完了: ${filename}`);
+            appendLog(`Downloading: ${lawTitle(law)} (${fileType})`);
+            if (fileType === "pdf") {
+              const htmlText = await fetchPrintableLawHtml(law, asof);
+              const pdfTarget = pdfWindows.get(index);
+              renderPrintWindow(pdfTarget.window, htmlText, pdfTarget.filename);
+              appendLog(`Print view opened: ${pdfTarget.filename}`);
+            } else if (fileType === "attachments") {
+              const blob = await fetchAttachmentArchiveBlob(law, asof);
+              const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}_attachments.zip`;
+              triggerDownload(blob, filename);
+              appendLog(`Saved: ${filename}`);
+            } else {
+              const blob = await fetchLawFile(law, fileType, asof);
+              const filename = `${sanitizeFilename(lawTitle(law))}_${pickDateString(law)}.${fileType}`;
+              triggerDownload(blob, filename);
+              appendLog(`Saved: ${filename}`);
+            }
             savedCount += 1;
           }
         }
-        setStatus(`保存完了: ${savedCount} ファイル`);
+
+        setStatus(`Saved ${savedCount} file(s).`);
       } catch (error) {
-        appendLog(`保存失敗: ${error.message}`);
+        appendLog(`Save failed: ${error.message}`);
         setStatus(error.message, true);
       } finally {
         downloadButton.disabled = false;
