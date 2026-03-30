@@ -242,7 +242,8 @@
       <div class="notice">
         <strong>出典:</strong> <a href="https://laws.e-gov.go.jp/" target="_blank" rel="noreferrer">e-Gov法令検索</a><br>
         このリポジトリの MIT License はソースコードのみに適用されます。<br>
-        <code>PDF</code> は公式HTML本文を印刷ビューで開き、公式サイトのPDFに近い体裁でブラウザの印刷ダイアログから保存します。
+        <code>PDF 印刷</code> は公式HTML本文を印刷ビューで開き、ブラウザの印刷ダイアログから保存します。<br>
+        公式PDFそのものが必要な場合は <code>tools/download-official-pdf.ps1</code> を使って取得してください。
       </div>
     </section>
 
@@ -277,7 +278,8 @@
 
         <div id="status" class="status">待機中</div>
         <p class="hint">通常はブラウザのダウンロードフォルダへ保存されます。</p>
-        <p class="hint"><code>PDF</code> は公式HTML本文から印刷ビューを開き、ブラウザの印刷ダイアログでPDF保存します。</p>
+        <p class="hint"><code>PDF 印刷</code> は公式HTML本文から印刷ビューを開き、ブラウザの印刷ダイアログでPDF保存します。</p>
+        <p class="hint">公式PDF本文はブラウザ版からは CORS 制約で直接取得できません。付属の <code>tools/download-official-pdf.ps1</code> を使ってください。</p>
         <p class="hint"><code>ATTACH ZIP</code> は様式や付録などの添付ファイルを、存在する場合に zip で一括保存します。</p>
         <p class="hint">ブラウザから e-Gov API へ直接アクセスできない環境では、CORS の影響で検索に失敗することがあります。</p>
       </section>
@@ -484,7 +486,11 @@
       SUPPORTED_TYPES.forEach((name, index) => {
         const wrapper = document.createElement("label");
         wrapper.className = "pill";
-        const label = name === "attachments" ? "ATTACH ZIP" : name.toUpperCase();
+        const label = name === "attachments"
+          ? "ATTACH ZIP"
+          : name === "pdf"
+            ? "PDF 印刷"
+            : name.toUpperCase();
         wrapper.innerHTML = `<input type="checkbox" id="file-${name}" ${index === 2 ? "checked" : ""}> ${label}`;
         fileTypesRoot.appendChild(wrapper);
       });
